@@ -71,7 +71,7 @@ class TentangAplikasiPage extends StatelessWidget {
             ),
             _buildDetailSection(
               title: "Versi",
-              content: "1.0.0 (Build 20251205)",
+              content: "1.0.0 (Build 20251224)",
             ),
             _buildDetailSection(
               title: "Pengembang",
