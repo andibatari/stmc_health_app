@@ -224,6 +224,84 @@ class _McuDetailPageState extends State<McuDetailPage> {
             Container(
               padding: const EdgeInsets.all(16),
               // ... [KODE UI KARTU STATUS & QR CODE TETAP SAMA] ...
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.grey.shade300, blurRadius: 5)],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Status MCU
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        "Status Jadwal:",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                      ),
+                      Chip(
+                        avatar: Icon(_getStatusIcon(mcu.status), size: 18, color: Colors.white),
+                        label: Text(mcu.status, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        backgroundColor: _getStatusColor(mcu.status),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  const SizedBox(height: 10),
+
+                  // TAMPILKAN QR CODE DISINI (DITENGAHKAN)
+                  if (mcu.qrCodeId.isNotEmpty)
+                    Center( // Memastikan seluruh blok ini berada di tengah
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Memberikan dekorasi container putih dengan shadow halus agar QR lebih menonjol
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: QrImageView(
+                              data: mcu.qrCodeId,
+                              version: QrVersions.auto,
+                              size: 180.0,
+                              gapless: true, // Menghilangkan garis putih antar modul QR agar lebih rapi
+                              eyeStyle: const QrEyeStyle(
+                                eyeShape: QrEyeShape.square,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            "Tunjukkan QR Code ini kepada petugas",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                    ),
+
+                  Text('Nomor Antrean: ${mcu.noAntrean}'), // Menampilkan C001
+                  Text('Tanggal: ${mcu.date}'),
+                  Text('Dokter: ${mcu.doctorName}'),
+                ],
+              ),
             ),
 
             const SizedBox(height: 25),
