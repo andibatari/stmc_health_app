@@ -7,6 +7,7 @@ class McuService {
   final String _riwayatUrl = KBaseUrl + KRiwayatJadwalUrl;
   // Gunakan konstanta jika ada, atau pastikan path-nya benar
   final String _paketUrl = KBaseUrl + KGetPaketMcuUrl;
+  final String _checkInPoliUrl = KBaseUrl + '/api/jadwal-poli/checkin';
 
   // 1. Mengajukan Jadwal
   Future<Map<String, dynamic>> submitJadwal({
@@ -102,6 +103,34 @@ class McuService {
     } catch (e) {
       print("Error Fetch Paket: $e");
       return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> checkInPoli({
+    required int idJadwalPoli,
+    required String accessToken,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(_checkInPoliUrl), // Sesuaikan URL dengan rute API-mu
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: jsonEncode({
+          'id_jadwal_poli': idJadwalPoli,
+        }),
+      );
+
+      final responseBody = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': 'Berhasil check-in ke Poli'};
+      } else {
+        return {'success': false, 'message': responseBody['message'] ?? 'Gagal check-in poli.'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Kesalahan koneksi: Gagal terhubung ke server.'};
     }
   }
 }

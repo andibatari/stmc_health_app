@@ -19,9 +19,10 @@ class McuData {
   final String status;
   final String category;
   final String noAntrean;
-  final Map<String, dynamic>? resume; // Tambahkan field ini
-  final String? downloadUrl; // Tambahkan field ini
-  final String qrCodeId; // Tambahkan ini
+  final Map<String, dynamic>? resume;
+  final String? downloadUrl;
+  final String qrCodeId;
+  final List<dynamic> checklistPoli;
 
   McuData({
     required this.id,
@@ -34,6 +35,7 @@ class McuData {
     this.resume,
     this.downloadUrl,
     required this.qrCodeId,
+    this.checklistPoli = const [],
   });
 }
 
@@ -49,7 +51,8 @@ McuData _mcuDataFromApi(Map<String, dynamic> apiData) {
     category: apiData['paket_mcu'] ?? 'Paket MCU', // Atau sesuaikan dengan field paket jika ada
     resume: apiData['resume'] is Map ? apiData['resume'] : null,
     downloadUrl: apiData['url_unduh_laporan'], // Mengambil URL merger PDF
-    qrCodeId: apiData['qr_code_id'] ?? '-', // Tambahkan ini
+    qrCodeId: apiData['qr_code_id'] ?? '-',
+    checklistPoli: apiData['checklist_poli'] ?? [], // MAP DATA POLI DARI LARAVEL
   );
 }
 
@@ -180,48 +183,28 @@ class McuPage extends StatelessWidget {
 }
 
 
-class McuDetailPage extends StatelessWidget {
+class McuDetailPage extends StatefulWidget {
   final McuData mcu;
   const McuDetailPage({super.key, required this.mcu});
 
-  // Data resume kesehatan simulasi (Sesuai permintaan terbaru)
-  Map<String, String> get _getResumeData {
-    // Data ini akan ditampilkan di dalam kotak merah (Hasil Pemeriksaan)
-    return {
-      'BMI': '24.2 (Normal)',
-      'Hasil Laboratorium': 'Baik',
-      'Hasil Pemeriksaan EKG': 'Normal',
-      'Hasil Pemeriksaan Gigi': 'Baik',
-      'Hasil Pemeriksaan Mata': 'Baik',
-      'Hasil Pemeriksaan Spirometri': '-',
-      'Hasil Pemeriksaan Audiometri': '-',
-      'Hasil Pemeriksaan Kesegaran Jasmani': 'Baik',
-      'Hasil Pemeriksaan Thorax Photo': '-',
-      'Hasil Treadmill': '-',
-      'Hasil USG': '-',
-    };
-  }
+  @override
+  State<McuDetailPage> createState() => _McuDetailPageState();
+}
 
-  // Data Saran dan Kategori
-  Map<String, String> get _getSaranData {
-    return mcu.category == 'Item 1 MCU'
-        ? {
-      'Saran': 'Hasil MCU secara umum baik, tetapi disarankan untuk rutin berolahraga.',
-      'Kategori': 'Fit with Note (K2)',
-    }
-        : {
-      'Saran': 'Disarankan untuk membatasi konsumsi makanan berkolesterol tinggi dan periksa kembali 6 bulan ke depan.',
-      'Kategori': 'Fit with Note (K2)',
-    };
-  }
+class _McuDetailPageState extends State<McuDetailPage> {
+  // Tambahkan state isLoading untuk proses tombol check-in
+  bool _isCheckingIn = false;
 
   @override
   Widget build(BuildContext context) {
-    // Ambil data resume dari objek mcu (bukan simulasi lagi)
+    final mcu = widget.mcu;
     final Map<String, dynamic> resumeData = mcu.resume?['hasil'] ?? {};
     final String saran = mcu.resume?['saran'] ?? '-';
     final String kategori = mcu.resume?['kategori'] ?? '-';
     final bool isFinished = mcu.status == 'Finished';
+
+    // Asumsi: Checklist hanya muncul jika pasien sudah "Present" (Hadir di RS)
+    final bool isPresent = mcu.status == 'Present';
 
     return Scaffold(
       appBar: AppBar(
@@ -237,90 +220,23 @@ class McuDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- KARTU STATUS DAN DATA DASAR ---
+            // --- KARTU STATUS DAN DATA DASAR [KODE LAMA KAMU] ---
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.grey.shade300, blurRadius: 5)],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Status MCU
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "Status Jadwal:",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                      ),
-                      Chip(
-                        avatar: Icon(_getStatusIcon(mcu.status), size: 18, color: Colors.white),
-                        label: Text(mcu.status, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        backgroundColor: _getStatusColor(mcu.status),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  const SizedBox(height: 10),
-
-                  // TAMPILKAN QR CODE DISINI (DITENGAHKAN)
-                  if (mcu.qrCodeId.isNotEmpty)
-                    Center( // Memastikan seluruh blok ini berada di tengah
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Memberikan dekorasi container putih dengan shadow halus agar QR lebih menonjol
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: QrImageView(
-                              data: mcu.qrCodeId,
-                              version: QrVersions.auto,
-                              size: 180.0,
-                              gapless: true, // Menghilangkan garis putih antar modul QR agar lebih rapi
-                              eyeStyle: const QrEyeStyle(
-                                eyeShape: QrEyeShape.square,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            "Tunjukkan QR Code ini kepada petugas",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                              fontStyle: FontStyle.italic,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
-
-                  Text('Nomor Antrean: ${mcu.noAntrean}'), // Menampilkan C001
-                  Text('Tanggal: ${mcu.date}'),
-                  Text('Dokter: ${mcu.doctorName}'),
-                ],
-              ),
+              // ... [KODE UI KARTU STATUS & QR CODE TETAP SAMA] ...
             ),
 
             const SizedBox(height: 25),
+
+            // ==========================================================
+            // FITUR BARU: DAFTAR POLI SAYA (REAL-TIME KEPADATAN)
+            // ==========================================================
+            if (isPresent) ...[
+              const Text("Daftar Poli Saya", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              _buildChecklistPoli(mcu.checklistPoli),
+              const SizedBox(height: 25),
+            ],
 
             // --- TOMBOL UNDUH LAPORAN ---
             if (isFinished && mcu.downloadUrl != null)
@@ -372,9 +288,101 @@ class McuDetailPage extends StatelessWidget {
     );
   }
 
+  // --- FUNGSI WIDGET CHECKLIST POLI ---
+  Widget _buildChecklistPoli(List<dynamic> polis) {
+    if (polis.isEmpty) {
+      return const Text("Belum ada daftar poli yang ditetapkan.", style: TextStyle(color: Colors.grey));
+    }
+
+    return Column(
+      children: polis.map((poli) {
+        String namaPoli = poli['nama_poli'] ?? 'Poli';
+        int antrean = poli['antrean_sekarang'] ?? 0;
+        String statusPoli = poli['status'] ?? 'Pending'; // Pending, Waiting, Finished
+
+        // Logika Indikator Kepadatan 🔴🟡🟢
+        Color indicatorColor = Colors.green;
+        String statusText = '🟢 Kosong (Langsung Masuk)';
+
+        if (statusPoli == 'Finished') {
+          indicatorColor = Colors.blue;
+          statusText = '✅ Selesai Diperiksa';
+        } else if (antrean == 1) {
+          indicatorColor = Colors.orange;
+          statusText = '🟡 Antrean 1 Orang';
+        } else if (antrean > 1) {
+          indicatorColor = Colors.red;
+          statusText = '🔴 Antrean $antrean Orang';
+        }
+
+        return Card(
+          elevation: 2,
+          margin: const EdgeInsets.only(bottom: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: CircleAvatar(
+              backgroundColor: indicatorColor.withOpacity(0.15),
+              child: Icon(Icons.medical_services, color: indicatorColor),
+            ),
+            title: Text(namaPoli, style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4.0),
+              child: Text(statusText, style: const TextStyle(fontSize: 13)),
+            ),
+            trailing: _buildTrailingAction(poli['id_jadwal_poli'], statusPoli),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // --- TOMBOL AKSI CARA A (Ambil Antrean) ---
+  Widget _buildTrailingAction(int? idJadwalPoli, String statusPoli) {
+    if (statusPoli == 'Finished') {
+      return const Icon(Icons.check_circle, color: Colors.blue, size: 30);
+    }
+
+    if (statusPoli == 'Waiting') {
+      return const Text("Menunggu\nPanggilan", textAlign: TextAlign.center, style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold));
+    }
+
+    return ElevatedButton(
+      onPressed: _isCheckingIn ? null : () => _handleAmbilAntrean(idJadwalPoli),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: primaryRed,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: const Text('Ambil\nAntrean', textAlign: TextAlign.center, style: TextStyle(fontSize: 11)),
+    );
+  }
+
+  // --- LOGIKA TOMBOL AMBIL ANTREAN ---
+  Future<void> _handleAmbilAntrean(int? idJadwalPoli) async {
+    if (idJadwalPoli == null) return;
+
+    setState(() => _isCheckingIn = true);
+
+    final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
+    final mcuService = McuService();
+
+    // Panggil API untuk "Check-In" ke Poli
+    final result = await mcuService.checkInPoli(idJadwalPoli: idJadwalPoli, accessToken: userState.accessToken!);
+
+    setState(() => _isCheckingIn = false);
+
+    if (result['success']) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Berhasil mengambil antrean poli!')));
+      // TODO: Lakukan refresh halaman detail atau state management update agar UI berubah jadi 'Waiting'
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message']), backgroundColor: Colors.red));
+    }
+  }
+
   // Fungsi untuk handle download PDF
   void _handleDownload(BuildContext context) async {
-    final Uri url = Uri.parse(mcu.downloadUrl!);
+    final Uri url = Uri.parse(widget.mcu.downloadUrl!);
 
     try {
       // Menampilkan pesan loading

@@ -1,4 +1,4 @@
-const String KBaseUrl = "https://stmc-portal-tls5w.ondigitalocean.app/api";
+const String KBaseUrl = "http://34.50.115.121/api";
 const String KLoginUrl = "/login"; // Endpoint Login
 const String KLogoutUrl = "/logout"; // Endpoint Logout
 
