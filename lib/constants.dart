@@ -1,4 +1,4 @@
-const String KBaseUrl = "http://34.50.115.121/api";
+const String KBaseUrl = "https://stmc-health.my.id/api";
 const String KLoginUrl = "/login"; // Endpoint Login
 const String KLogoutUrl = "/logout"; // Endpoint Logout
 
