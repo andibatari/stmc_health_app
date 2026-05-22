@@ -58,6 +58,7 @@ class McuService {
 
       if (response.statusCode == 200) {
         // PERUBAHAN DISINI: Ambil dari responseBody['data'] karena server membungkusnya
+        print("====== DATA DARI SERVER: ${response.body} ======");
         final List allData = responseBody['data'] ?? [];
 
         return {
@@ -112,8 +113,9 @@ class McuService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse(_checkInPoliUrl), // Sesuaikan URL dengan rute API-mu
+        Uri.parse(_checkInPoliUrl),
         headers: {
+          'Accept': 'application/json', // ⬅️ WAJIB TAMBAHKAN BARIS INI
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $accessToken',
         },
@@ -121,6 +123,9 @@ class McuService {
           'id_jadwal_poli': idJadwalPoli,
         }),
       );
+
+      // ⬇️ TAMBAHKAN PRINT INI UNTUK MELIHAT RESPON ASLI DARI SERVER DI TERMINAL VS CODE
+      print("RESPON DARI SERVER SAAT TOMBOL DITEKAN: ${response.body}");
 
       final responseBody = jsonDecode(response.body);
 
@@ -130,6 +135,8 @@ class McuService {
         return {'success': false, 'message': responseBody['message'] ?? 'Gagal check-in poli.'};
       }
     } catch (e) {
+      // ⬇️ PRINT INI UNTUK MENGETAHUI JIKA ADA CRASH DI SISI FLUTTER
+      print("ERROR CRASH DI FLUTTER: $e");
       return {'success': false, 'message': 'Kesalahan koneksi: Gagal terhubung ke server.'};
     }
   }
