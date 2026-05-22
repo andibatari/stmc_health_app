@@ -198,7 +198,8 @@ class _McuDetailPageState extends State<McuDetailPage> {
   @override
   Widget build(BuildContext context) {
     final mcu = widget.mcu;
-    final Map<String, dynamic> resumeData = mcu.resume?['hasil'] ?? {};
+    //Lakukan proses konversi (casting) secara eksplisit untuk memberi tahu Dart bahwa itu memang Map
+    final Map<String, dynamic> resumeData = (mcu.resume?['hasil'] as Map<String, dynamic>?) ?? {};
     final String saran = mcu.resume?['saran'] ?? '-';
     final String kategori = mcu.resume?['kategori'] ?? '-';
     final bool isFinished = mcu.status == 'Finished';
@@ -251,7 +252,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
                   const SizedBox(height: 10),
 
                   // TAMPILKAN QR CODE DISINI (DITENGAHKAN)
-                  if (mcu.qrCodeId.isNotEmpty)
+                  if (mcu.qrCodeId.isNotEmpty && mcu.qrCodeId != '-')
                     Center( // Memastikan seluruh blok ini berada di tengah
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -447,7 +448,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
 
     // Panggil API untuk "Check-In" ke Poli
     final result = await mcuService.checkInPoli(idJadwalPoli: idJadwalPoli, accessToken: userState.accessToken!);
-
+    if (!mounted) return;
     setState(() => _isCheckingIn = false);
 
     if (result['success']) {
@@ -647,13 +648,15 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
       accessToken: userState.accessToken!,
     );
 
+    if (!mounted) return;
+
     setState(() {
       _isSubmitting = false;
     });
 
     if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'])),
+        SnackBar(content: Text(result['message'] ?? 'Berhasil mengajukan jadwal')),
       );
       // Kembali ke halaman sebelumnya
       Navigator.of(context).pop();
