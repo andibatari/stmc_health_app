@@ -7,7 +7,7 @@ class McuService {
   final String _riwayatUrl = KBaseUrl + KRiwayatJadwalUrl;
   // Gunakan konstanta jika ada, atau pastikan path-nya benar
   final String _paketUrl = KBaseUrl + KGetPaketMcuUrl;
-  final String _checkInPoliUrl = KBaseUrl + '/api/jadwal-poli/checkin';
+  final String _checkInPoliUrl = KBaseUrl + KCheckInPoliUrl;
 
   // 1. Mengajukan Jadwal
   Future<Map<String, dynamic>> submitJadwal({

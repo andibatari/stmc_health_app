@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:pusher_channels_flutter/pusher_channels_flutter.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 // Asumsi path file main.dart berada dua level di atas.
@@ -195,6 +197,101 @@ class _McuDetailPageState extends State<McuDetailPage> {
   // Tambahkan state isLoading untuk proses tombol check-in
   bool _isCheckingIn = false;
 
+  // TAMBAHKAN VARIABEL AUDIO & PUSHER DI SINI
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  PusherChannelsFlutter _pusher = PusherChannelsFlutter.getInstance();
+
+  // TAMBAHKAN FUNGSI INITSTATE
+  @override
+  void initState() {
+    super.initState();
+    // Jika statusnya Present (Hadir) atau Waiting, nyalakan telinga Pusher
+    if (widget.mcu.status == 'Present' || widget.mcu.status == 'Waiting') {
+      _initPusher();
+    }
+  }
+
+  // MASUKKAN FUNGSI INIT PUSHER
+  Future<void> _initPusher() async {
+    try {
+      await _pusher.init(
+        apiKey: "c04c6e0bc13266555594", // GANTI INI DENGAN KEY DARI PUSHER.COM
+        cluster: "ap1",
+        onEvent: _onPusherEvent,
+      );
+      await _pusher.subscribe(channelName: 'mcu-channel');
+      await _pusher.connect();
+    } catch (e) {
+      debugPrint("ERROR PUSHER: $e");
+    }
+  }
+
+  // MASUKKAN FUNGSI PENERIMA SINYAL (ALARM NYALA)
+  void _onPusherEvent(PusherEvent event) {
+    // Catatan: Kadang Pusher menambahkan titik di depan nama event jika memakai broadcastAs() di Laravel
+    // Jika nanti tidak ter-trigger, coba ubah menjadi '.PanggilPasienEvent'
+    if (event.eventName == 'PanggilPasienEvent' || event.eventName == '.PanggilPasienEvent') {
+      try {
+        Map<String, dynamic> data = jsonDecode(event.data.toString());
+
+        // Cek apakah sinyal ini untuk ID jadwal pasien ini
+        if (data['jadwalId'].toString() == widget.mcu.id.toString()) {
+
+          // Bunyikan Alarm!
+          // Pastikan file ding-dong.wav sudah didaftarkan di pubspec.yaml
+          _audioPlayer.play(AssetSource('audio/ding-dong.wav'));
+
+          // PERBAIKAN: Cek apakah halaman masih aktif sebelum memunculkan dialog
+          if (!mounted) return;
+
+          // Munculkan Pop-Up
+          showDialog(
+            context: context,
+            barrierDismissible: false, // Tidak bisa ditutup dengan klik di luar
+            builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              title: const Row(
+                children: [
+                  Icon(Icons.campaign, color: Colors.red, size: 30),
+                  SizedBox(width: 10),
+                  Text("PANGGILAN", style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Text(
+                "Giliran Anda!\nSilakan segera masuk ke ruangan ${data['namaPoli']}.",
+                style: const TextStyle(fontSize: 16),
+              ),
+              actions: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    _audioPlayer.stop(); // Matikan suara jika ditutup
+                    Navigator.pop(context); // Tutup dialog
+                  },
+                  child: const Text("SAYA MENUJU KE SANA"),
+                )
+              ],
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint("Error parse Pusher data: $e");
+      }
+    }
+  }
+
+  // MATIKAN PUSHER DAN AUDIO SAAT HALAMAN DITUTUP
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    _pusher.unsubscribe(channelName: 'mcu-channel');
+    _pusher.disconnect();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final mcu = widget.mcu;
@@ -382,32 +479,62 @@ class _McuDetailPageState extends State<McuDetailPage> {
         // Logika Indikator Kepadatan 🔴🟡🟢
         Color indicatorColor = Colors.green;
         String statusText = '🟢 Kosong (Langsung Masuk)';
+        IconData statusIcon = Icons.check_circle;
 
         if (statusPoli == 'Finished') {
           indicatorColor = Colors.blue;
           statusText = '✅ Selesai Diperiksa';
+          statusIcon = Icons.task_alt;
         } else if (antrean == 1) {
           indicatorColor = Colors.orange;
           statusText = '🟡 Antrean 1 Orang';
+          statusIcon = Icons.people_alt;
         } else if (antrean > 1) {
           indicatorColor = Colors.red;
           statusText = '🔴 Antrean $antrean Orang';
+          statusIcon = Icons.warning_rounded;
         }
 
-        return Card(
-          elevation: 2,
-          margin: const EdgeInsets.only(bottom: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [
+              BoxShadow(
+                color: indicatorColor.withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: CircleAvatar(
-              backgroundColor: indicatorColor.withOpacity(0.15),
-              child: Icon(Icons.medical_services, color: indicatorColor),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: indicatorColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.medical_services_rounded, color: indicatorColor, size: 24),
             ),
-            title: Text(namaPoli, style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+                namaPoli,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)
+            ),
             subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4.0),
-              child: Text(statusText, style: const TextStyle(fontSize: 13)),
+              padding: const EdgeInsets.only(top: 6.0),
+              child: Row(
+                children: [
+                  Icon(statusIcon, size: 14, color: indicatorColor),
+                  const SizedBox(width: 4),
+                  Text(
+                      statusText,
+                      style: TextStyle(fontSize: 12, color: indicatorColor, fontWeight: FontWeight.w600)
+                  ),
+                ],
+              ),
             ),
             trailing: _buildTrailingAction(poli['id_jadwal_poli'], statusPoli),
           ),
@@ -419,11 +546,38 @@ class _McuDetailPageState extends State<McuDetailPage> {
   // --- TOMBOL AKSI CARA A (Ambil Antrean) ---
   Widget _buildTrailingAction(int? idJadwalPoli, String statusPoli) {
     if (statusPoli == 'Finished') {
-      return const Icon(Icons.check_circle, color: Colors.blue, size: 30);
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.check_circle, color: Colors.blue, size: 28),
+          const SizedBox(height: 4),
+          const Text("Selesai", style: TextStyle(color: Colors.blue, fontSize: 10, fontWeight: FontWeight.bold)),
+        ],
+      );
     }
 
     if (statusPoli == 'Waiting') {
-      return const Text("Menunggu\nPanggilan", textAlign: TextAlign.center, style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold));
+      // Tampilan label "Menunggu Panggilan" yang jauh lebih rapi
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.access_time_filled, color: Colors.orange, size: 18),
+            SizedBox(height: 4),
+            Text(
+              "Menunggu\nPanggilan",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      );
     }
 
     return ElevatedButton(
@@ -431,9 +585,11 @@ class _McuDetailPageState extends State<McuDetailPage> {
       style: ElevatedButton.styleFrom(
         backgroundColor: primaryRed,
         foregroundColor: Colors.white,
+        elevation: 2,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
-      child: const Text('Ambil\nAntrean', textAlign: TextAlign.center, style: TextStyle(fontSize: 11)),
+      child: const Text('Ambil\nAntrean', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
     );
   }
 

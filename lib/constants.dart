@@ -14,3 +14,4 @@ const String KLingkunganUrl = "/lingkungan"; // Endpoint untuk data utama
 const String KLingkunganFilterUrl = "/lingkungan/filters"; // Endpoint untuk filter dinamis
 
 const String KGetPaketMcuUrl = "/jadwal-mcu/paket";
+const String KCheckInPoliUrl = "/jadwal-poli/checkin";
