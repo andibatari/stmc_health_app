@@ -559,7 +559,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
     if (statusPoli == 'Waiting') {
       // Tampilan label "Menunggu Panggilan" yang jauh lebih rapi
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.orange.shade50,
           borderRadius: BorderRadius.circular(8),
