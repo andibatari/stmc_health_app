@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:pusher_channels_flutter/pusher_channels_flutter.dart';
@@ -8,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../main.dart';
 import '../../services/mcu_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:stmc_health_app/global_notification.dart';
 
 const Color primaryRed = Color(0xFFC00000);
 const Color lightRed = Color(0xFFFBECEC);
@@ -41,12 +43,21 @@ class McuData {
   });
 }
 
+// ALAT BANTU UNTUK MENGAMBIL TAHUN DARI TEKS TANGGAL
+String _extractYear(String? dateStr) {
+  if (dateStr == null || dateStr.isEmpty) return DateTime.now().year.toString();
+
+  // Mencari 4 angka berurutan di dalam teks (contoh menemukan "2026" dari "22 Mei 2026")
+  final match = RegExp(r'\d{4}').firstMatch(dateStr);
+  return match != null ? match.group(0)! : DateTime.now().year.toString();
+}
+
 // Update helper konversi data API
 McuData _mcuDataFromApi(Map<String, dynamic> apiData) {
   return McuData(
     id: apiData['id'] ?? 0,
-    checkUpNumber: apiData['iteration_number'] ?? '#', // Gunakan no_antrean dari Gambar 10
-    noAntrean: apiData['no_antrean'] ?? '-', // Gunakan no_antrean dari Gambar 10
+    checkUpNumber: _extractYear(apiData['tanggal_mcu']),
+    noAntrean: apiData['no_antrean'] ?? '-', // Gunakan no_antrean
     date: apiData['tanggal_mcu'] ?? 'N/A',      // Gunakan tanggal_mcu
     doctorName: apiData['dokter'] ?? 'Menunggu',
     status: apiData['status'] ?? 'Scheduled',
@@ -196,105 +207,57 @@ class McuDetailPage extends StatefulWidget {
 class _McuDetailPageState extends State<McuDetailPage> {
   // Tambahkan state isLoading untuk proses tombol check-in
   bool _isCheckingIn = false;
-
-  // TAMBAHKAN VARIABEL AUDIO & PUSHER DI SINI
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  PusherChannelsFlutter _pusher = PusherChannelsFlutter.getInstance();
+  late McuData currentMcu; // Menyimpan data MCU yang bisa berubah nilainya
 
   // TAMBAHKAN FUNGSI INITSTATE
   @override
   void initState() {
     super.initState();
-    // Jika statusnya Present (Hadir) atau Waiting, nyalakan telinga Pusher
-    if (widget.mcu.status == 'Present' || widget.mcu.status == 'Waiting') {
-      _initPusher();
-    }
+
+    // Inisialisasi data awal dari halaman sebelumnya
+    currentMcu = widget.mcu;
+    globalActiveJadwalId = currentMcu.id;
+
+    // ✅ PASANG TELINGA KE REMOTE CONTROL GLOBAL
+    globalRefreshTrigger.addListener(_refreshMcuDataFromServer);
   }
 
-  // MASUKKAN FUNGSI INIT PUSHER
-  Future<void> _initPusher() async {
-    try {
-      await _pusher.init(
-        apiKey: "c04c6e0bc13266555594", // GANTI INI DENGAN KEY DARI PUSHER.COM
-        cluster: "ap1",
-        onEvent: _onPusherEvent,
+  @override
+  void dispose() {
+    // ✅ CABUT TELINGA SAAT KELUAR HALAMAN
+    globalRefreshTrigger.removeListener(_refreshMcuDataFromServer);
+    super.dispose();
+  }
+
+  // FUNGSI RAHASIA JALAN SULTAN: Ambil data segar langsung dari database via API
+  Future<void> _refreshMcuDataFromServer() async {
+    final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
+    final mcuService = McuService();
+
+    final result = await mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!);
+    if (result['success'] == true) {
+      final List activeListApi = result['aktif'] ?? [];
+      // Cari data saya di dalam list terbaru
+      final myFreshData = activeListApi.firstWhere(
+            (item) => item['id'] == currentMcu.id,
+        orElse: () => null,
       );
-      await _pusher.subscribe(channelName: 'mcu-channel');
-      await _pusher.connect();
-    } catch (e) {
-      debugPrint("ERROR PUSHER: $e");
-    }
-  }
 
-  // MASUKKAN FUNGSI PENERIMA SINYAL (ALARM NYALA)
-  void _onPusherEvent(PusherEvent event) {
-    // Catatan: Kadang Pusher menambahkan titik di depan nama event jika memakai broadcastAs() di Laravel
-    // Jika nanti tidak ter-trigger, coba ubah menjadi '.PanggilPasienEvent'
-    if (event.eventName == 'PanggilPasienEvent' || event.eventName == '.PanggilPasienEvent') {
-      try {
-        Map<String, dynamic> data = jsonDecode(event.data.toString());
-
-        // Cek apakah sinyal ini untuk ID jadwal pasien ini
-        if (data['jadwalId'].toString() == widget.mcu.id.toString()) {
-
-          // Bunyikan Alarm!
-          // Pastikan file ding-dong.wav sudah didaftarkan di pubspec.yaml
-          _audioPlayer.play(AssetSource('audio/ding-dong.wav'));
-
-          // PERBAIKAN: Cek apakah halaman masih aktif sebelum memunculkan dialog
-          if (!mounted) return;
-
-          // Munculkan Pop-Up
-          showDialog(
-            context: context,
-            barrierDismissible: false, // Tidak bisa ditutup dengan klik di luar
-            builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-              title: const Row(
-                children: [
-                  Icon(Icons.campaign, color: Colors.red, size: 30),
-                  SizedBox(width: 10),
-                  Text("PANGGILAN", style: TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: Text(
-                "Giliran Anda!\nSilakan segera masuk ke ruangan ${data['namaPoli']}.",
-                style: const TextStyle(fontSize: 16),
-              ),
-              actions: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.shade700,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () {
-                    _audioPlayer.stop(); // Matikan suara jika ditutup
-                    Navigator.pop(context); // Tutup dialog
-                  },
-                  child: const Text("SAYA MENUJU KE SANA"),
-                )
-              ],
-            ),
-          );
-        }
-      } catch (e) {
-        debugPrint("Error parse Pusher data: $e");
+      if (myFreshData != null && mounted) {
+        setState(() {
+          // Ganti data lama dengan data baru yang segar dari server
+          currentMcu = _mcuDataFromApi(myFreshData);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Status Poli Anda Baru Saja Diperbarui! ✅'), backgroundColor: Colors.green),
+        );
       }
     }
   }
 
-  // MATIKAN PUSHER DAN AUDIO SAAT HALAMAN DITUTUP
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    _pusher.unsubscribe(channelName: 'mcu-channel');
-    _pusher.disconnect();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final mcu = widget.mcu;
+    final mcu = currentMcu;
     //Lakukan proses konversi (casting) secara eksplisit untuk memberi tahu Dart bahwa itu memang Map
     final Map<String, dynamic> resumeData = (mcu.resume?['hasil'] as Map<String, dynamic>?) ?? {};
     final String saran = mcu.resume?['saran'] ?? '-';
@@ -482,7 +445,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
         IconData statusIcon = Icons.check_circle;
 
         if (statusPoli == 'Finished') {
-          indicatorColor = Colors.blue;
+          indicatorColor = Colors.green.shade600;
           statusText = '✅ Selesai Diperiksa';
           statusIcon = Icons.task_alt;
         } else if (antrean == 1) {
@@ -549,9 +512,9 @@ class _McuDetailPageState extends State<McuDetailPage> {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.check_circle, color: Colors.blue, size: 28),
+          const Icon(Icons.check_circle, color: Colors.green, size: 28),
           const SizedBox(height: 4),
-          const Text("Selesai", style: TextStyle(color: Colors.blue, fontSize: 10, fontWeight: FontWeight.bold)),
+          const Text("Selesai", style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
         ],
       );
     }
@@ -559,7 +522,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
     if (statusPoli == 'Waiting') {
       // Tampilan label "Menunggu Panggilan" yang jauh lebih rapi
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.orange.shade50,
           borderRadius: BorderRadius.circular(8),
@@ -571,7 +534,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
             Icon(Icons.access_time_filled, color: Colors.orange, size: 18),
             SizedBox(height: 4),
             Text(
-              "Menunggu\nPanggilan",
+              "Menunggu",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold),
             ),
@@ -617,7 +580,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
 
   // Fungsi untuk handle download PDF
   void _handleDownload(BuildContext context) async {
-    final Uri url = Uri.parse(widget.mcu.downloadUrl!);
+    final Uri url = Uri.parse(currentMcu.downloadUrl!);
 
     try {
       // Menampilkan pesan loading
@@ -1238,7 +1201,10 @@ class JadwalCard extends StatelessWidget {
         // Navigasi ke halaman detail dengan membawa data
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => McuDetailPage(mcu: data)),
+          MaterialPageRoute(builder: (_) {
+            globalActiveJadwalId = data.id; //
+            return McuDetailPage(mcu: data);
+          }),
         );
       },
       child: Card(
@@ -1291,35 +1257,43 @@ class JadwalAktifList extends StatelessWidget {
       return const Center(child: Text("Silakan login untuk melihat jadwal."));
     }
 
-    return FutureBuilder<Map<String, dynamic>>(
-      future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: primaryRed));
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text("Error: Gagal koneksi (Network/Timeout). ${snapshot.error.toString()}"));
-        }
-        if (snapshot.data == null || snapshot.data!['success'] == false) {
-          return Center(child: Text("Gagal memuat jadwal: ${snapshot.data?['message'] ?? 'Error otorisasi/API.'}"));
-        }
+    // ✅ BUNGKUS DENGAN PENERIMA REMOTE CONTROL
+    return ValueListenableBuilder<int>(
+      valueListenable: globalRefreshTrigger,
+      builder: (context, triggerValue, child) {
 
-        final List activeJadwalsApi = snapshot.data!['aktif'] ?? [];
-        final List<McuData> activeJadwals = activeJadwalsApi.map((data) => _mcuDataFromApi(data)).toList();
+        return FutureBuilder<Map<String, dynamic>>(
+          future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
+          builder: (context, snapshot) {
+            // ... (Isi kode di bawah ini biarkan sama persis seperti aslinya) ...
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: primaryRed));
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text("Error: Gagal koneksi (Network/Timeout). ${snapshot.error.toString()}"));
+            }
+            if (snapshot.data == null || snapshot.data!['success'] == false) {
+              return Center(child: Text("Gagal memuat jadwal: ${snapshot.data?['message'] ?? 'Error otorisasi/API.'}"));
+            }
 
-        if (activeJadwals.isEmpty) {
-          return const Center(child: Padding(
-            padding: EdgeInsets.all(20.0),
-            child: Text("Tidak ada jadwal MCU aktif saat ini.", style: TextStyle(color: Colors.black54)),
-          ));
-        }
+            final List activeJadwalsApi = snapshot.data!['aktif'] ?? [];
+            final List<McuData> activeJadwals = activeJadwalsApi.map((data) => _mcuDataFromApi(data)).toList();
 
-        return ListView(
-          padding: const EdgeInsets.only(top: 8.0),
-          children: activeJadwals.map((data) => JadwalCard(
-            data: data,
-            borderColor: primaryRed,
-          )).toList(),
+            if (activeJadwals.isEmpty) {
+              return const Center(child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Text("Tidak ada jadwal MCU aktif saat ini.", style: TextStyle(color: Colors.black54)),
+              ));
+            }
+
+            return ListView(
+              padding: const EdgeInsets.only(top: 8.0),
+              children: activeJadwals.map((data) => JadwalCard(
+                data: data,
+                borderColor: primaryRed,
+              )).toList(),
+            );
+          },
         );
       },
     );
@@ -1388,32 +1362,38 @@ class JadwalMedicalCheckUpAPI extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return FutureBuilder<Map<String, dynamic>>(
-      future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 20.0),
-            child: CircularProgressIndicator(color: primaryRed, strokeWidth: 2),
-          ));
-        }
+    // ✅ BUNGKUS DENGAN PENERIMA REMOTE CONTROL
+    return ValueListenableBuilder<int>(
+      valueListenable: globalRefreshTrigger,
+      builder: (context, triggerValue, child) {
 
-        if (snapshot.hasError || snapshot.data == null || snapshot.data!['success'] == false) {
-          // Sembunyikan jika gagal di Beranda (cukup blank)
-          return const SizedBox.shrink();
-        }
+        // 🔄 SETIAP KALI SINYAL DITERIMA, FUTUREBUILDER INI AKAN DI-RELOAD
+        return FutureBuilder<Map<String, dynamic>>(
+          future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20.0),
+                child: CircularProgressIndicator(color: primaryRed, strokeWidth: 2),
+              ));
+            }
 
-        final List activeJadwalsApi = snapshot.data!['aktif'] ?? [];
+            if (snapshot.hasError || snapshot.data == null || snapshot.data!['success'] == false) {
+              return const SizedBox.shrink();
+            }
 
-        if (activeJadwalsApi.isEmpty) {
-          return const SizedBox.shrink();
-        }
+            final List activeJadwalsApi = snapshot.data!['aktif'] ?? [];
 
-        // Ambil jadwal aktif pertama untuk ditampilkan di Beranda
-        final activeMcu = _mcuDataFromApi(activeJadwalsApi.first);
+            if (activeJadwalsApi.isEmpty) {
+              return const SizedBox.shrink();
+            }
 
-        // Gunakan widget JadwalMedicalCheckUp yang lama (modifikasi sedikit)
-        return JadwalMedicalCheckUp(activeMcu: activeMcu);
+            final activeMcu = _mcuDataFromApi(activeJadwalsApi.first);
+            globalActiveJadwalId = activeMcu.id;
+
+            return JadwalMedicalCheckUp(activeMcu: activeMcu);
+          },
+        );
       },
     );
   }
@@ -1464,7 +1444,10 @@ class JadwalMedicalCheckUp extends StatelessWidget {
               Navigator.push(
                 context,
                 // Navigasi ke detail dengan data MCU aktif
-                MaterialPageRoute(builder: (_) => McuDetailPage(mcu: activeSchedule)),
+                MaterialPageRoute(builder: (_) {
+                  globalActiveJadwalId = activeSchedule.id; //
+                  return McuDetailPage(mcu: activeSchedule);
+                }),
               );
             }
           },

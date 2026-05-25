@@ -4,6 +4,7 @@ import 'package:stmc_health_app/views/main_wrapper.dart';
 import 'views/login/login_page.dart'; // Import halaman Login
 import 'dart:convert'; // Diperlukan untuk jsonDecode
 import 'package:shared_preferences/shared_preferences.dart'; // Diperlukan untuk persistency
+import 'global_notification.dart';
 
 // Definisikan warna yang digunakan di theme (sesuaikan dengan yang Anda gunakan)
 const Color primaryRed = Color(0xFFC00000);
@@ -65,6 +66,10 @@ class UserState {
 void main() async {
   // Wajib dipanggil sebelum menggunakan SharedPreferences
   WidgetsFlutterBinding.ensureInitialized();
+
+  // NYALAKAN TELINGA GLOBAL SEBELUM APLIKASI JALAN
+  await GlobalNotificationService().initPusher();
+
   final AuthService authService = AuthService();
   UserState initialUserState = UserState.initial();
 
@@ -131,6 +136,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey, //
+      title: 'STMC Health',
       home: ValueListenableBuilder<UserState>(
         valueListenable: userStateNotifier,
         builder: (context, userState, child) {
