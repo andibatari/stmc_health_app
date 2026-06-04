@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // IMPORT FCM BARU
+import 'package:http/http.dart' as http; // IMPORT HTTP BARU
 import 'package:stmc_health_app/main.dart';
 import 'package:stmc_health_app/services/mcu_service.dart';
+import '../../global_notification.dart';
 import '../../services/auth_service.dart';
 import 'lingkungan_page.dart'; // Asumsi file ini ada
 import 'mcu_page.dart'; // Asumsi file ini ada
@@ -11,12 +14,106 @@ const Color lightRed = Color(0xFFFBECEC); // Untuk latar belakang icon MCU
 // Definisikan tipe callback
 typedef TabChangeCallback = void Function(int index);
 
-class HomePage extends StatelessWidget {
-  // 1. Deklarasi variabel callback
+// =========================================================
+// 1. UBAH HOMEPAGE MENJADI STATEFUL WIDGET AGAR BISA INITSTATE
+// =========================================================
+class HomePage extends StatefulWidget {
   final TabChangeCallback onTabChange;
 
-  // 2. Constructor menerima callback (non-const)
-  HomePage({super.key, required this.onTabChange});
+  const HomePage({super.key, required this.onTabChange});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  // 1. TAMBAHKAN VARIABEL PENGAMAN INI DI ATAS initState
+  bool _isNotificationSetupRunning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 2. Panggil fungsi Firebase saat Beranda dimuat
+    setupPushNotification();
+  }
+
+  // =========================================================
+  // 3. LOGIKA INTI FIREBASE CLOUD MESSAGING (FCM)
+  // =========================================================
+  void setupPushNotification() async {
+    // 2. CEK JIKA PROSES SEDANG BERJALAN, JANGAN JALANKAN LAGI
+    if (_isNotificationSetupRunning) return;
+
+    // Tandai bahwa proses sedang berjalan
+    _isNotificationSetupRunning = true;
+
+    try {
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+      // Minta izin ke pengguna (Wajib untuk Android 13+)
+      NotificationSettings settings = await messaging.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        // Ambil FCM Token HP
+        String? token = await messaging.getToken();
+        debugPrint("===== INI ADALAH FCM TOKEN HP KAMU =====");
+        debugPrint(token);
+        debugPrint("========================================");
+
+        // Kirim token ke API Laravel jika user sudah terautentikasi
+        sendTokenToLaravel(token);
+      }
+
+      // Tangkap Notifikasi saat aplikasi sedang dibuka (Foreground)
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        if (message.notification != null) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text(message.notification!.title ?? "Pengumuman"),
+              content: Text(message.notification!.body ?? ""),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Tutup", style: TextStyle(color: primaryRed)),
+                )
+              ],
+            ),
+          );
+        }
+      });
+
+    } catch (e) {
+      debugPrint("Error setup FCM: $e");
+    } finally {
+      // 3. SETELAH SELESAI (SUKSES/GAGAL), BUKA KEMBALI KUNCI PENGAMAN
+      _isNotificationSetupRunning = false;
+    }
+  }
+
+  void sendTokenToLaravel(String? token) async {
+    if (token == null) return;
+
+    // Ambil ID Karyawan dari Global State yang ada di MyApp
+    final myApp = context.findAncestorWidgetOfExactType<MyApp>();
+    final userId = myApp?.userStateNotifier.value.userData?['id'];
+
+    if (userId != null) {
+      final url = Uri.parse("https://stmc-health.my.id/api/update-fcm-token");
+      try {
+        await http.post(url, body: {
+          'karyawan_id': userId.toString(),
+          'fcm_token': token,
+        });
+        debugPrint("FCM Token berhasil dikirim ke server!");
+      } catch (e) {
+        debugPrint("Gagal kirim FCM Token: $e");
+      }
+    }
+  }
+  // =========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +138,6 @@ class HomePage extends StatelessWidget {
                 final userData = loginData['userData'];
 
                 // 2. Logika penentuan role (Karyawan/Non-Karyawan)
-                // Ini untuk memastikan status KARYAWAN muncul kembali jika sempat hilang
                 dynamic isEmployeeRaw = userData['is_employee'] ?? userData['isEmployee'];
                 bool isEmployee = (isEmployeeRaw == true || isEmployeeRaw == 1 || isEmployeeRaw.toString() == 'true');
                 String updatedRole = isEmployee ? 'KARYAWAN' : 'NON_PTST';
@@ -49,7 +145,7 @@ class HomePage extends StatelessWidget {
                 String? updatedName = userData['nama'];
                 String? updatedSap = userData['no_sap'] ?? userData['nik'];
 
-                // 3. Update state global melalui notifier yang sudah Anda definisikan di atas (userStateNotifier)
+                // 3. Update state global
                 userStateNotifier.value = UserState(
                   isLoggedIn: true,
                   accessToken: loginData['accessToken'],
@@ -57,7 +153,7 @@ class HomePage extends StatelessWidget {
                   name: updatedName,
                   sap: updatedSap,
                   displayText: '$updatedSap - $updatedName',
-                  role: updatedRole, // <--- Ini yang memperbaiki masalah halaman Lingkungan
+                  role: updatedRole,
                   jobTitle: userData['jabatan'],
                   email: userData['email'],
                   nik: userData['nik'],
@@ -71,10 +167,8 @@ class HomePage extends StatelessWidget {
                 );
               }
 
-              // 4. Memberikan jeda agar animasi spinner terlihat
               await Future.delayed(const Duration(seconds: 1));
 
-              // 5. Memicu build ulang untuk mengupdate FutureBuilder Antrean & Jadwal
               if (context.mounted) {
                 (context as Element).markNeedsBuild();
               }
@@ -83,19 +177,19 @@ class HomePage extends StatelessWidget {
             }
           },
           child: SingleChildScrollView(
-            // PENTING: physics ini memastikan halaman bisa ditarik walau konten sedikit
             physics: const AlwaysScrollableScrollPhysics(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                HomeHeader(userState: userState, onTabChange: onTabChange),
+                // PERHATIKAN: Karena ini StatefulWidget, akses fungsi dari luar harus menggunakan 'widget.'
+                HomeHeader(userState: userState, onTabChange: widget.onTabChange),
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 10),
-                      LayananLainnya(onTabChange: onTabChange, userState: userState),
+                      LayananLainnya(onTabChange: widget.onTabChange, userState: userState),
                       const SizedBox(height: 25),
                       JadwalMedicalCheckUpAPI(),
                     ],
@@ -151,24 +245,31 @@ class HomeHeader extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(flex: 2, child: _buildWelcomeCardModern(userState)),
+              Expanded(
+                  flex: 2,
+                  child: _buildWelcomeCardModern(userState)),
               const SizedBox(width: 14),
               Expanded(
-                  flex: 1,
-                  child: FutureBuilder<Map<String, dynamic>>(
-                    future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
-                    builder: (context, snapshot) {
-                      String antreanUser = "-";
-                      if (snapshot.hasData && snapshot.data!['success'] == true) {
-                        List aktif = snapshot.data!['aktif'];
-                        if (aktif.isNotEmpty) {
-                          // Mengambil no_antrean dari data pertama (C001)
-                          antreanUser = aktif.first['no_antrean'] ?? "-";
+                flex: 1,
+                // ✅ BUNGKUS DENGAN ValueListenableBuilder
+                child: ValueListenableBuilder<int>(
+                  valueListenable: globalRefreshTrigger,
+                  builder: (context, triggerValue, child) {
+                    return FutureBuilder<Map<String, dynamic>>(
+                      future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
+                      builder: (context, snapshot) {
+                        String antreanUser = "-";
+                        if (snapshot.hasData && snapshot.data!['success'] == true) {
+                          List aktif = snapshot.data!['aktif'];
+                          if (aktif.isNotEmpty) {
+                            antreanUser = aktif.first['no_antrean'] ?? "-";
+                          }
                         }
-                      }
-                      return _buildQueueCardModern(antreanUser);
-                    },
-                  )
+                        return _buildQueueCardModern(antreanUser);
+                      },
+                    );
+                  },
+                ),
               )
             ],
           ),
@@ -260,10 +361,8 @@ class HomeHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: () {
-            // FUNGSI AKTIF: Gunakan Navigator.push untuk membuka halaman Pendaftaran
             Navigator.push(
               context,
-              // Pastikan McuPendaftaranPage diimpor/dikenal di file ini
               MaterialPageRoute(builder: (context) => const McuPendaftaranPage()),
             );
           },
@@ -290,14 +389,11 @@ class HomeHeader extends StatelessWidget {
 // --- WIDGET UNTUK BAGIAN LAYANAN LAINNYA ---
 
 class LayananLainnya extends StatelessWidget {
-  // 1. Deklarasi variabel callback
   final TabChangeCallback onTabChange;
-  final UserState userState; // Tambahkan properti ini
+  final UserState userState;
 
-  // 2. Constructor non-const agar bisa menerima fungsi
   LayananLainnya({super.key, required this.onTabChange, required this.userState});
 
-  // Helper untuk menampilkan dialog penolakan
   void _showAccessDeniedDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -328,8 +424,6 @@ class LayananLainnya extends StatelessWidget {
     );
   }
 
-  // Hapus const dari constructor jika sebelumnya ada!
-
   @override
   Widget build(BuildContext context) {
     final isKaryawan = userState.role == 'KARYAWAN';
@@ -344,11 +438,9 @@ class LayananLainnya extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.start,
           children: <Widget>[
-            // --- ICON MCU ---
             InkWell(
               onTap: () {
-                // Panggil fungsi yang dibawa dari MainWrapper
-                onTabChange(1); // Indeks MCU
+                onTabChange(1);
               },
               child: _buildServiceIcon(
                 icon: Icons.favorite,
@@ -360,14 +452,11 @@ class LayananLainnya extends StatelessWidget {
 
             const SizedBox(width: 15),
 
-            // --- ICON LINGKUNGAN ---
             InkWell(
               onTap: () {
                 if (isKaryawan) {
-                  // Jika Karyawan, alihkan tab seperti biasa
                   onTabChange(2);
                 } else {
-                  // Jika Non-Karyawan, tampilkan pop-up penolakan
                   _showAccessDeniedDialog(context);
                 }
               },
@@ -389,7 +478,6 @@ class LayananLainnya extends StatelessWidget {
     );
   }
 
-  // Jadikan method ini public agar bisa dipanggil InkWell di atas
   Widget _buildServiceIcon({
     required IconData icon,
     required String label,
@@ -435,17 +523,14 @@ class LayananLainnya extends StatelessWidget {
 class JadwalMedicalCheckUp extends StatelessWidget {
   final List<McuData> mcuList;
 
-  // Constructor menerima data list MCU
   const JadwalMedicalCheckUp({super.key, required this.mcuList});
 
   @override
   Widget build(BuildContext context) {
-    // Mencari jadwal aktif pertama dari list yang diterima
     final activeSchedule = mcuList.firstWhere(
             (m) => m.status == 'Scheduled',
         orElse: () => McuData(id: 0, checkUpNumber: '#', noAntrean: '-', date: 'Tidak Ada', doctorName: 'N/A', status: 'N/A', category: 'N/A', resume: null, downloadUrl: null, qrCodeId: '-'));
 
-    // Cek apakah ada jadwal aktif yang ditemukan
     final hasActiveSchedule = activeSchedule.id != 0;
 
     return Column(
@@ -460,8 +545,7 @@ class JadwalMedicalCheckUp extends StatelessWidget {
             ),
             InkWell(
               onTap: () {
-                // TODO: Navigasi ke halaman utama Jadwal MCU (McuJadwalPage)
-                // Ini harus memicu Bottom Nav ke tab MCU
+                // TODO: Navigasi ke halaman utama Jadwal MCU
               },
               child: const Icon(Icons.arrow_forward_ios, size: 16.0, color: primaryRed),
             ),
@@ -469,10 +553,8 @@ class JadwalMedicalCheckUp extends StatelessWidget {
         ),
         const SizedBox(height: 15),
 
-        // Widget Jadwal Aktif
         InkWell(
           onTap: () {
-            // Navigasi ke halaman detail saat kartu di Beranda diklik
             if (hasActiveSchedule) {
               Navigator.push(
                 context,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../global_notification.dart';
 import '../../main.dart';
 import '../../services/lingkungan_service.dart';
 
@@ -81,7 +82,18 @@ class _LingkunganPageState extends State<LingkunganPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeData();
     });
+
+    // ✅ 1. PASANG TELINGA KE GLOBAL TRIGGER
+    globalRefreshTrigger.addListener(_loadData);
   }
+
+  // ✅ 2. WAJIB TAMBAHKAN DISPOSE UNTUK MENCABUT TELINGA
+  @override
+  void dispose() {
+    globalRefreshTrigger.removeListener(_loadData);
+    super.dispose();
+  }
+
   Future<void> _initializeData() async {
     await _loadFilters(); // Ambil daftar pilihan filter dulu
     await _loadData();    // Baru ambil data tabel

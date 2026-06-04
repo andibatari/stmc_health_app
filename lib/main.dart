@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:stmc_health_app/services/auth_service.dart';
 import 'package:stmc_health_app/views/main_wrapper.dart';
@@ -5,6 +7,7 @@ import 'views/login/login_page.dart'; // Import halaman Login
 import 'dart:convert'; // Diperlukan untuk jsonDecode
 import 'package:shared_preferences/shared_preferences.dart'; // Diperlukan untuk persistency
 import 'global_notification.dart';
+import 'firebase_options.dart'; // Wajib di-import!
 
 // Definisikan warna yang digunakan di theme (sesuaikan dengan yang Anda gunakan)
 const Color primaryRed = Color(0xFFC00000);
@@ -63,12 +66,26 @@ class UserState {
   );
 }
 
+// Ini adalah fungsi agar HP tetap bisa menerima notifikasi meski aplikasi sedang ditutup
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  print("Notifikasi Masuk (Background): ${message.notification?.title}");
+}
+
 void main() async {
   // Wajib dipanggil sebelum menggunakan SharedPreferences
   WidgetsFlutterBinding.ensureInitialized();
 
   // NYALAKAN TELINGA GLOBAL SEBELUM APLIKASI JALAN
   await GlobalNotificationService().initPusher();
+
+  // Menyalakan mesin Firebase menggunakan konfigurasi otomatis dari FlutterFire CLI
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Mendaftarkan fungsi background
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   final AuthService authService = AuthService();
   UserState initialUserState = UserState.initial();

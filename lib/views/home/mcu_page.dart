@@ -226,6 +226,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
   void dispose() {
     // ✅ CABUT TELINGA SAAT KELUAR HALAMAN
     globalRefreshTrigger.removeListener(_refreshMcuDataFromServer);
+
     super.dispose();
   }
 
@@ -372,7 +373,32 @@ class _McuDetailPageState extends State<McuDetailPage> {
             // ==========================================================
             if (isPresent) ...[
               const Text("Daftar Poli Saya", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
+
+              // 🌟 TEKS PERINGATAN BARU
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Mohon mengambil antrean HANYA saat Anda sudah berada di depan pintu Poli, agar panggilan Anda tidak bertabrakan dengan poli lain.",
+                        style: TextStyle(fontSize: 12, color: Colors.blue, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 15),
+
               _buildChecklistPoli(mcu.checklistPoli),
               const SizedBox(height: 25),
             ],
@@ -435,9 +461,23 @@ class _McuDetailPageState extends State<McuDetailPage> {
 
     return Column(
       children: polis.map((poli) {
+        print("DEBUG DATA POLI: ${poli['nama_poli']} - Data: $poli");
         String namaPoli = poli['nama_poli'] ?? 'Poli';
-        int antrean = poli['antrean_sekarang'] ?? 0;
         String statusPoli = poli['status'] ?? 'Pending'; // Pending, Waiting, Finished
+        int totalAntreanPoli = poli['antrean_sekarang'] ?? 0; // Total orang yang antre
+        int noAntreanAnda = int.tryParse(poli['no_antrean_poli']?.toString() ?? '0') ?? 0;
+        int sisaAntrean = poli['sisa_antrean'] ?? 0;
+
+
+        // 🌟 JIKA STATUSNYA WAITING, TAMPILKAN TIKET VIRTUAL
+        if (statusPoli == 'Waiting' || statusPoli == 'Calling') {
+          String noAntreanPoli = poli['no_antrean_poli']?.toString() ?? '-';
+
+          // ✅ TAMBAHKAN PRINT INI UNTUK MELIHAT APA YANG DIKIRIM KE TIKET
+          print("Kirim ke Tiket: Nama=$namaPoli, No=$noAntreanPoli, Sisa=${poli['sisa_antrean']}");
+
+          return _buildVirtualTicket(namaPoli, sisaAntrean, noAntreanPoli,statusPoli);
+        }
 
         // Logika Indikator Kepadatan 🔴🟡🟢
         Color indicatorColor = Colors.green;
@@ -448,13 +488,13 @@ class _McuDetailPageState extends State<McuDetailPage> {
           indicatorColor = Colors.green.shade600;
           statusText = '✅ Selesai Diperiksa';
           statusIcon = Icons.task_alt;
-        } else if (antrean == 1) {
+        } else if (totalAntreanPoli == 1) {
           indicatorColor = Colors.orange;
           statusText = '🟡 Antrean 1 Orang';
           statusIcon = Icons.people_alt;
-        } else if (antrean > 1) {
+        } else if (totalAntreanPoli > 1) {
           indicatorColor = Colors.red;
-          statusText = '🔴 Antrean $antrean Orang';
+          statusText = '🔴 Antrean $totalAntreanPoli Orang';
           statusIcon = Icons.warning_rounded;
         }
 
@@ -506,6 +546,103 @@ class _McuDetailPageState extends State<McuDetailPage> {
     );
   }
 
+  Widget _buildVirtualTicket(String namaPoli, int sisaAntrean, String noAntreanAnda,String statusPoli) {
+
+    // Ubah String menjadi angka (int) terlebih dahulu agar bisa dibandingkan
+    int noAntreanInt = int.tryParse(noAntreanAnda) ?? 0;
+
+    // Jika database memberikan "0" tapi statusnya "Waiting", paksa tampilkan 1
+    String displayAntrean = (noAntreanAnda == "0" || noAntreanAnda == "-") ? "1" : noAntreanAnda;
+
+    // Jika sisa antrean negatif atau 0, tampilkan "0"
+    String displaySisa = (sisaAntrean < 0) ? "0" : sisaAntrean.toString();
+
+    // ✅ 2. LOGIKA STATUS BARU UNTUK BAGIAN BAWAH TIKET
+    Color statusColor = (statusPoli == 'Calling') ? Colors.green.shade700 : Colors.grey;
+    Color statusBgColor = (statusPoli == 'Calling') ? Colors.green.shade50 : Colors.grey.shade100;
+    IconData statusIcon = (statusPoli == 'Calling') ? Icons.volume_up_rounded : Icons.access_time;
+    String statusText = (statusPoli == 'Calling') ? "Status: GILIRAN ANDA! Silakan Masuk..." : "Status: Menunggu Panggilan...";
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: primaryRed.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Header Tiket
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: primaryRed,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+            ),
+            child: const Center(
+              child: Text("TIKET ANTREAN",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+            ),
+          ),
+
+          // Body Tiket
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Text("ANDA BERADA DI ANTREAN", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Text(namaPoli.toUpperCase(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
+
+                const SizedBox(height: 15),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        const Text("No. Antrean Anda", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        Text(displayAntrean, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: primaryRed)),
+                      ],
+                    ),
+                    Container(height: 40, width: 1, color: Colors.grey.shade300),
+                    Column(
+                      children: [
+                        const Text("Sisa Antrean Depan", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        Text(displaySisa, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.orange)),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+
+                // Status
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(color: statusBgColor, borderRadius: BorderRadius.circular(8)),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(statusIcon, size: 16, color: statusColor),
+                      const SizedBox(width: 8),
+                      Text(statusText, style: TextStyle(fontWeight: FontWeight.w600, color: statusColor)),
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // --- TOMBOL AKSI CARA A (Ambil Antrean) ---
   Widget _buildTrailingAction(int? idJadwalPoli, String statusPoli) {
     if (statusPoli == 'Finished') {
@@ -516,30 +653,6 @@ class _McuDetailPageState extends State<McuDetailPage> {
           const SizedBox(height: 4),
           const Text("Selesai", style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
         ],
-      );
-    }
-
-    if (statusPoli == 'Waiting') {
-      // Tampilan label "Menunggu Panggilan" yang jauh lebih rapi
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.orange.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange.shade200),
-        ),
-        child: const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.access_time_filled, color: Colors.orange, size: 18),
-            SizedBox(height: 4),
-            Text(
-              "Menunggu",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
       );
     }
 
@@ -572,7 +685,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
 
     if (result['success']) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Berhasil mengambil antrean poli!')));
-      // TODO: Lakukan refresh halaman detail atau state management update agar UI berubah jadi 'Waiting'
+      _refreshMcuDataFromServer();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message']), backgroundColor: Colors.red));
     }
@@ -651,32 +764,28 @@ class McuPendaftaranPage extends StatefulWidget {
 
 class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
   DateTime? _selectedDate;
+  String? _selectedPaketId;
+  String? _assignedDoctor;
 
-  // --- STATE BARU DITAMBAHKAN DI SINI ---
-  String? _selectedPaketId; // Menyimpan paket MCU yang dipilih pasien
-  String? _assignedDoctor; // Menyimpan nama dokter yang ditentukan otomatis oleh sistem
-
-  // Data dummy untuk pilihan paket MCU
-  // 1. Ubah variabel menjadi list kosong dulu
-  List<Map<String, String>> _paketOptions = []; // Awalnya kosong
-  bool _isLoadingPaket = true; // State untuk loading indikator
-
+  List<Map<String, String>> _paketOptions = [];
+  bool _isLoadingPaket = true;
   final McuService _mcuService = McuService();
   bool _isSubmitting = false;
+
+  // --- STATE BARU UNTUK CEK KUOTA ---
+  bool _isCheckingDate = false;
+  int _sisaKuota = 30;
 
   @override
   void initState() {
     super.initState();
-    // Gunakan postFrameCallback untuk mendapatkan context/userState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPaketData();
     });
   }
 
   Future<void> _loadPaketData() async {
-    // Mengambil userState dari MyApp untuk mendapatkan token
     final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
-
     if (userState.accessToken != null) {
       try {
         final pakets = await _mcuService.fetchPaketMcu(accessToken: userState.accessToken!);
@@ -686,30 +795,39 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
         });
       } catch (e) {
         setState(() => _isLoadingPaket = false);
-        debugPrint("Error loading paket: $e");
       }
     }
   }
 
   String get _dateText {
     return _selectedDate == null
-        ? 'Ajukan Jadwal'
+        ? 'Pilih Tanggal Ajukan Jadwal'
         : '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}';
   }
 
-  // [Fungsi yang akan dipanggil setelah tanggal dipilih untuk simulasi penentuan dokter]
-  void _determineDoctor(DateTime date) {
-    // SIMULASI: Dalam implementasi backend, ini adalah panggilan API.
-    // Di sini, kita simulasikan penentuan dokter berdasarkan tanggal.
-    String doctor;
-    if (date.day % 2 == 0) {
-      doctor = "dr. Nurul (Piket)";
-    } else {
-      doctor = "dr. Iwan (Piket)";
-    }
+  // --- FUNGSI BARU MEMANGGIL API LARAVEL ---
+  Future<void> _checkKetersediaanData(DateTime date) async {
+    setState(() {
+      _isCheckingDate = true;
+      _assignedDoctor = "Mengecek sistem...";
+    });
+
+    final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
+    final String formattedDate = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+    final result = await _mcuService.checkKetersediaan(tanggal: formattedDate, accessToken: userState.accessToken!);
+
+    if (!mounted) return;
 
     setState(() {
-      _assignedDoctor = doctor;
+      _isCheckingDate = false;
+      if (result['success'] == true) {
+        _assignedDoctor = result['dokter'];
+        _sisaKuota = result['sisa_kuota'] ?? 0;
+      } else {
+        _assignedDoctor = "Gagal memuat jadwal dokter";
+        _sisaKuota = 0; // Jika error, kunci tombol dengan membuat kuota 0
+      }
     });
   }
 
@@ -736,13 +854,11 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
       setState(() {
         _selectedDate = picked;
       });
-
-      // PERBAIKAN: Panggil _determineDoctor di sini
-      _determineDoctor(picked);
+      // Panggil API saat tanggal dipilih
+      _checkKetersediaanData(picked);
     }
   }
 
-  // Fungsi untuk mengirim pendaftaran
   void _submitPendaftaran(BuildContext context, UserState userState) async {
     if (_selectedDate == null || _selectedPaketId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -757,13 +873,11 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
       _isSubmitting = true;
     });
 
-    // Format tanggal ke YYYY-MM-DD untuk API
     final String formattedDate = '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}';
 
-    // Saat memanggil submitJadwal
     final result = await _mcuService.submitJadwal(
       tanggalMcu: formattedDate,
-      paketMcu: _selectedPaketId!, // Kirim ID bukan Nama
+      paketMcu: _selectedPaketId!,
       accessToken: userState.accessToken!,
     );
 
@@ -775,9 +889,8 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
 
     if (result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'] ?? 'Berhasil mengajukan jadwal')),
+        SnackBar(content: Text(result['message'] ?? 'Berhasil mengajukan jadwal'), backgroundColor: Colors.green),
       );
-      // Kembali ke halaman sebelumnya
       Navigator.of(context).pop();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -788,8 +901,10 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Ambil ValueNotifier dari root (MyApp)
     final userStateNotifier = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier;
+
+    // Logika Kunci Tombol: Tombol tidak bisa diklik jika submit berjalan, sedang cek data, kuota 0, atau tanggal belum dipilih
+    bool isButtonDisabled = _isSubmitting || _isCheckingDate || _sisaKuota <= 0 || _selectedDate == null || _selectedPaketId == null;
 
     return ValueListenableBuilder<UserState>(
       valueListenable: userStateNotifier,
@@ -802,10 +917,7 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
               icon: const Icon(Icons.arrow_back_ios),
               onPressed: () => Navigator.of(context).pop(),
             ),
-            title: const Text(
-              "PENDAFTARAN",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
+            title: const Text("PENDAFTARAN MCU", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             centerTitle: true,
           ),
           body: SingleChildScrollView(
@@ -813,136 +925,116 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // --- Field Data Pasien (Display Nama & SAP) ---
+                // Identitas Pasien
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
                   child: TextField(
                     enabled: false,
                     decoration: InputDecoration(
-                      // Menampilkan data user yang sudah login
                       hintText: userState.displayText ?? 'Data Pengguna Tidak Ditemukan',
-                      border: const OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(10.0)),
-                        borderSide: BorderSide(color: Colors.grey),
-                      ),
-                      disabledBorder: const OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(10.0)),
-                        borderSide: BorderSide(color: Colors.grey),
-                      ),
+                      border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
+                      disabledBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
                     ),
                     style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
                   ),
                 ),
 
-                // --- Field Paket MCU (Dropdown) ---
+                // Pilih Paket
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
                   child: _isLoadingPaket
-                      ? const Center(child: LinearProgressIndicator(color: primaryRed)) // Tampilkan loading
+                      ? const Center(child: LinearProgressIndicator(color: primaryRed))
                       : DropdownButtonFormField<String>(
                     decoration: const InputDecoration(
                       labelText: 'Pilih Paket MCU',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(10.0)),
-                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0))),
                       contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 15),
                     ),
                     value: _selectedPaketId,
                     items: _paketOptions.map((Map<String, String> paket) {
-                      return DropdownMenuItem<String>(
-                        value: paket['id'],
-                        child: Text(paket['name']!),
-                      );
+                      return DropdownMenuItem<String>(value: paket['id'], child: Text(paket['name']!));
                     }).toList(),
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        _selectedPaketId = newValue;
-                      });
-                    },
-                    validator: (value) => value == null ? 'Wajib memilih paket' : null,
+                    onChanged: (String? newValue) => setState(() => _selectedPaketId = newValue),
                   ),
                 ),
 
-                // --- Field Ajukan Jadwal (Date Picker) ---
+                // Pilih Tanggal
                 InkWell(
                   onTap: () => _selectDate(context),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(10.0),
-                    ),
+                    decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(10.0)),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          _dateText,
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: _selectedDate == null ? Colors.grey[700] : Colors.black87,
-                          ),
-                        ),
+                        Text(_dateText, style: TextStyle(fontSize: 16, color: _selectedDate == null ? Colors.grey[700] : Colors.black87)),
                         const Icon(Icons.calendar_today, color: primaryRed),
                       ],
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 12),
 
-                // --- Field Dokter Otomatis (Display Only) ---
+                // Informasi Dokter & Sisa Kuota
                 Padding(
                   padding: const EdgeInsets.only(bottom: 25.0),
-                  child: TextField(
-                    enabled: false,
-                    decoration: InputDecoration(
-                      labelText: 'Dokter Piket',
-                      hintText: _assignedDoctor ?? 'Dokter ditentukan setelah tanggal dipilih',
-                      border: const OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(10.0)),
-                        borderSide: BorderSide(color: Colors.grey),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        enabled: false,
+                        decoration: InputDecoration(
+                          labelText: 'Dokter Piket',
+                          hintText: _assignedDoctor ?? 'Dokter ditentukan setelah tanggal dipilih',
+                          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
+                          disabledBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                        ),
+                        style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
                       ),
-                      disabledBorder: const OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(10.0)),
-                        borderSide: BorderSide(color: Colors.grey),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-                    ),
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+
+                      // INFORMASI KUOTA MERAH / HIJAU
+                      if (_selectedDate != null && !_isCheckingDate)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0, left: 4.0),
+                          child: Text(
+                            _sisaKuota > 0
+                                ? '✅ Sisa Kuota Hari Ini: $_sisaKuota Orang'
+                                : '❌ Kuota Hari Ini Penuh! Silakan pilih tanggal lain.',
+                            style: TextStyle(
+                              color: _sisaKuota > 0 ? Colors.green.shade700 : Colors.red.shade700,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
 
-                // --- Tombol Kirim ---
+                // Tombol Kirim (Warnanya jadi abu-abu jika Kuota 0)
                 Container(
                   decoration: BoxDecoration(
-                      color: primaryRed,
+                      color: isButtonDisabled ? Colors.grey.shade400 : primaryRed,
                       borderRadius: BorderRadius.circular(10.0),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
-                      ]
+                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))]
                   ),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: _isSubmitting ? null : () => _submitPendaftaran(context, userState),
+                      onTap: isButtonDisabled ? null : () => _submitPendaftaran(context, userState),
                       borderRadius: BorderRadius.circular(10.0),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _isSubmitting
+                            _isSubmitting || _isCheckingDate
                                 ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                : const Text(
-                              'Kirim',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16),
-                            ),
-                            if (!_isSubmitting) const SizedBox(width: 8),
-                            if (!_isSubmitting) const Icon(Icons.send, color: Colors.white, size: 20),
+                                : const Text('Kirim', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                            if (!_isSubmitting && !_isCheckingDate) const SizedBox(width: 8),
+                            if (!_isSubmitting && !_isCheckingDate) const Icon(Icons.send, color: Colors.white, size: 20),
                           ],
                         ),
                       ),

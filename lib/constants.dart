@@ -15,3 +15,4 @@ const String KLingkunganFilterUrl = "/lingkungan/filters"; // Endpoint untuk fil
 
 const String KGetPaketMcuUrl = "/jadwal-mcu/paket";
 const String KCheckInPoliUrl = "/jadwal-poli/checkin";
+const String KCheckKetersediaanUrl= "/jadwal-mcu/check-ketersediaan";

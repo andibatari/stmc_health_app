@@ -8,6 +8,7 @@ class McuService {
   // Gunakan konstanta jika ada, atau pastikan path-nya benar
   final String _paketUrl = KBaseUrl + KGetPaketMcuUrl;
   final String _checkInPoliUrl = KBaseUrl + KCheckInPoliUrl;
+  final String _checkKetersediaanUrl = KBaseUrl + KCheckKetersediaanUrl;
 
   // 1. Mengajukan Jadwal
   Future<Map<String, dynamic>> submitJadwal({
@@ -138,6 +139,46 @@ class McuService {
       // ⬇️ PRINT INI UNTUK MENGETAHUI JIKA ADA CRASH DI SISI FLUTTER
       print("ERROR CRASH DI FLUTTER: $e");
       return {'success': false, 'message': 'Kesalahan koneksi: Gagal terhubung ke server.'};
+    }
+  }
+
+  Future<Map<String, dynamic>> checkKetersediaan({
+    required String tanggal,
+    required String accessToken,
+  }) async {
+    try {
+      final String url = '$_checkKetersediaanUrl?tanggal=$tanggal';
+
+      // 1. PRINT URL YANG DITEMBAK
+      print("🌍 [CEK KUOTA] Menembak URL: $url");
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      // 2. PRINT HASIL JAWABAN DARI SERVER LARAVEL
+      print("📥 [CEK KUOTA] Status Code: ${response.statusCode}");
+      print("📥 [CEK KUOTA] Body Respon: ${response.body}");
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        // Jika status bukan 200, kembalikan pesan error asli dari server agar terlihat di layar HP
+        String errorMsg = 'Gagal mengecek kuota.';
+        try {
+          final decoded = jsonDecode(response.body);
+          errorMsg = decoded['message'] ?? errorMsg;
+        } catch(e) {}
+
+        return {'success': false, 'message': 'API Error ${response.statusCode}: $errorMsg'};
+      }
+    } catch (e) {
+      print("❌ [CEK KUOTA] ERROR KONEKSI FLUTTER: $e");
+      return {'success': false, 'message': 'Error koneksi: $e'};
     }
   }
 }

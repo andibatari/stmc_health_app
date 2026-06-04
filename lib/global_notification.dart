@@ -62,6 +62,11 @@ class GlobalNotificationService {
         Map<String, dynamic> data = jsonDecode(event.data.toString());
 
         debugPrint("EVENT ID: ${data['jadwalId']} | GLOBAL ID: $globalActiveJadwalId");
+
+        // ✅ TAMBAHAN UTAMA: Siapa pun yang dipanggil, semua halaman (Beranda, Detail, Lingkungan)
+        // harus ikut me-refresh datanya agar sisa antrean dan kepadatan poli selalu akurat.
+        globalRefreshTrigger.value++;
+
         // Cek apakah ID dari Laravel cocok dengan ID global di HP ini
         if (globalActiveJadwalId != null && data['jadwalId'].toString() == globalActiveJadwalId.toString()) {
           _playCount = 0;
@@ -105,7 +110,7 @@ class GlobalNotificationService {
             );
           }
         } else {
-          debugPrint("⚠️ ID tidak cocok, alarm tidak dibunyikan.");
+          debugPrint("⚠️ ID tidak cocok, alarm dan pop-up khusus tidak dibunyikan.");
         }
       } catch (e) {
         debugPrint("Error parse Pusher data: $e");
