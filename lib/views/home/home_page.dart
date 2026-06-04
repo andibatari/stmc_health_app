@@ -5,8 +5,11 @@ import 'package:stmc_health_app/main.dart';
 import 'package:stmc_health_app/services/mcu_service.dart';
 import '../../global_notification.dart';
 import '../../services/auth_service.dart';
-import 'lingkungan_page.dart'; // Asumsi file ini ada
-import 'mcu_page.dart'; // Asumsi file ini ada
+import '../notification/notification_page.dart';
+import 'lingkungan_page.dart';
+import 'mcu_page.dart';
+import '../notification/notification_page.dart'; // Import halaman notifikasi yang baru dibuat
+import 'package:intl/intl.dart'; // Jika belum ada, untuk format tanggal
 
 // Definisi warna utama yang digunakan dalam desain
 const Color primaryRed = Color(0xFFC00000);
@@ -41,34 +44,34 @@ class _HomePageState extends State<HomePage> {
   // 3. LOGIKA INTI FIREBASE CLOUD MESSAGING (FCM)
   // =========================================================
   void setupPushNotification() async {
-    // 2. CEK JIKA PROSES SEDANG BERJALAN, JANGAN JALANKAN LAGI
     if (_isNotificationSetupRunning) return;
-
-    // Tandai bahwa proses sedang berjalan
     _isNotificationSetupRunning = true;
 
     try {
       FirebaseMessaging messaging = FirebaseMessaging.instance;
-
-      // Minta izin ke pengguna (Wajib untuk Android 13+)
       NotificationSettings settings = await messaging.requestPermission(
         alert: true, badge: true, sound: true,
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        // Ambil FCM Token HP
         String? token = await messaging.getToken();
-        debugPrint("===== INI ADALAH FCM TOKEN HP KAMU =====");
-        debugPrint(token);
-        debugPrint("========================================");
-
-        // Kirim token ke API Laravel jika user sudah terautentikasi
         sendTokenToLaravel(token);
       }
 
-      // Tangkap Notifikasi saat aplikasi sedang dibuka (Foreground)
+      // 1. TANGKAP NOTIF SAAT APLIKASI TERBUKA (Foreground)
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         if (message.notification != null) {
+
+          // SIMPAN KE BRANKAS GLOBAL
+          final newNotif = {
+            'title': message.notification!.title,
+            'body': message.notification!.body,
+            'link': message.data['link'] ?? message.data['url'], // Menangkap link dari Payload Laravel
+            'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
+          };
+          appNotificationsNotifier.value = [newNotif, ...appNotificationsNotifier.value];
+
+          // TAMPILKAN POP-UP SEPERTI BIASA
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
@@ -78,6 +81,13 @@ class _HomePageState extends State<HomePage> {
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text("Tutup", style: TextStyle(color: primaryRed)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
+                  },
+                  child: const Text("Lihat", style: TextStyle(color: Colors.blue)),
                 )
               ],
             ),
@@ -85,10 +95,15 @@ class _HomePageState extends State<HomePage> {
         }
       });
 
+      // 2. TANGKAP NOTIF JIKA DIKLIK DARI LUAR APLIKASI (Background)
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        // Otomatis arahkan ke halaman notifikasi
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
+      });
+
     } catch (e) {
       debugPrint("Error setup FCM: $e");
     } finally {
-      // 3. SETELAH SELESAI (SUKSES/GAGAL), BUKA KEMBALI KUNCI PENGAMAN
       _isNotificationSetupRunning = false;
     }
   }
@@ -232,10 +247,35 @@ class HomeHeader extends StatelessWidget {
                 height: 55,
                 fit: BoxFit.contain,
               ),
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.notifications_none,
-                    color: Colors.white, size: 26),
+              ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: appNotificationsNotifier,
+                  builder: (context, notifications, child) {
+                    return Stack(
+                      children: [
+                        IconButton(
+                          onPressed: () {
+                            // Pindah ke Halaman Notifikasi
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const NotificationPage()),
+                            );
+                          },
+                          icon: const Icon(Icons.notifications_none, color: Colors.white, size: 28),
+                        ),
+
+                        // BINTIK MERAH JIKA ADA NOTIFIKASI
+                        if (notifications.isNotEmpty)
+                          Positioned(
+                            right: 12,
+                            top: 12,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
+                            ),
+                          )
+                      ],
+                    );
+                  }
               )
             ],
           ),

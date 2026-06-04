@@ -52,20 +52,45 @@ String _extractYear(String? dateStr) {
   return match != null ? match.group(0)! : DateTime.now().year.toString();
 }
 
-// Update helper konversi data API
 McuData _mcuDataFromApi(Map<String, dynamic> apiData) {
+
+  // 🔥 1. FUNGSI PEMBONGKAR OBJEK DOKTER DARI LARAVEL
+  String parseDoctorName(dynamic dokterData) {
+    if (dokterData == null) return 'Dokter Piket (Menunggu)';
+    // Jika bentuknya teks biasa
+    if (dokterData is String) return dokterData;
+    // Jika bentuknya Objek/Map dari relasi Laravel
+    if (dokterData is Map<String, dynamic>) {
+      return dokterData['nama_lengkap'] ?? dokterData['nama'] ?? 'Dokter Piket (Menunggu)';
+    }
+    return 'Dokter Piket (Menunggu)';
+  }
+
+  // 🔥 2. FUNGSI PEMBONGKAR OBJEK PAKET (Pencegahan error untuk kategori)
+  String parsePaketName(dynamic paketData) {
+    if (paketData == null) return 'Paket MCU';
+    if (paketData is String) return paketData;
+    if (paketData is Map<String, dynamic>) {
+      return paketData['nama_paket'] ?? 'Paket MCU';
+    }
+    return 'Paket MCU';
+  }
+
   return McuData(
     id: apiData['id'] ?? 0,
     checkUpNumber: _extractYear(apiData['tanggal_mcu']),
-    noAntrean: apiData['no_antrean'] ?? '-', // Gunakan no_antrean
-    date: apiData['tanggal_mcu'] ?? 'N/A',      // Gunakan tanggal_mcu
-    doctorName: apiData['dokter'] ?? 'Menunggu',
+    noAntrean: apiData['no_antrean'] ?? '-',
+    date: apiData['tanggal_mcu'] ?? 'N/A',
+
+    // 👇 MENGGUNAKAN FUNGSI PEMBONGKAR DI SINI 👇
+    doctorName: parseDoctorName(apiData['dokter']),
+    category: parsePaketName(apiData['paket_mcu']),
+
     status: apiData['status'] ?? 'Scheduled',
-    category: apiData['paket_mcu'] ?? 'Paket MCU', // Atau sesuaikan dengan field paket jika ada
     resume: apiData['resume'] is Map ? apiData['resume'] : null,
-    downloadUrl: apiData['url_unduh_laporan'], // Mengambil URL merger PDF
+    downloadUrl: apiData['url_unduh_laporan'],
     qrCodeId: apiData['qr_code_id'] ?? '-',
-    checklistPoli: apiData['checklist_poli'] ?? [], // MAP DATA POLI DARI LARAVEL
+    checklistPoli: apiData['checklist_poli'] ?? [],
   );
 }
 
@@ -928,15 +953,16 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
                 // Identitas Pasien
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
-                  child: TextField(
+                  child: TextFormField( // ⬅️ Ubah jadi TextFormField
+                    initialValue: userState.displayText ?? 'Data Pengguna Tidak Ditemukan', // ⬅️ Gunakan initialValue
                     enabled: false,
-                    decoration: InputDecoration(
-                      hintText: userState.displayText ?? 'Data Pengguna Tidak Ditemukan',
-                      border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
-                      disabledBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                    decoration: const InputDecoration(
+                      labelText: 'Nama Pasien',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
+                      disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 15),
                     ),
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
                   ),
                 ),
 
@@ -982,19 +1008,20 @@ class _McuPendaftaranPageState extends State<McuPendaftaranPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextField(
+                      TextFormField( // ⬅️ Ubah jadi TextFormField
+                        key: ValueKey(_assignedDoctor), // ⬅️ KUNCI AJAIB: Memaksa Flutter merefresh form ini saat nama dokter berubah
+                        initialValue: _assignedDoctor ?? 'Dokter ditentukan setelah tanggal dipilih', // ⬅️ Gunakan initialValue
                         enabled: false,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: 'Dokter Piket',
-                          hintText: _assignedDoctor ?? 'Dokter ditentukan setelah tanggal dipilih',
-                          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
-                          disabledBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
+                          disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10.0)), borderSide: BorderSide(color: Colors.grey)),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 15),
                         ),
-                        style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+                        style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.black87), // Tulisan ditebalkan
                       ),
 
-                      // INFORMASI KUOTA MERAH / HIJAU
+                      // INFORMASI KUOTA MERAH / HIJAU (Biarkan sama)
                       if (_selectedDate != null && !_isCheckingDate)
                         Padding(
                           padding: const EdgeInsets.only(top: 8.0, left: 4.0),
