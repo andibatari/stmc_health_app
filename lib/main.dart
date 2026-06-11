@@ -1,18 +1,21 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 🌟 TAMBAHAN UNTUK ALARM
 import 'package:stmc_health_app/services/auth_service.dart';
 import 'package:stmc_health_app/views/main_wrapper.dart';
-import 'views/login/login_page.dart'; // Import halaman Login
-import 'dart:convert'; // Diperlukan untuk jsonDecode
-import 'package:shared_preferences/shared_preferences.dart'; // Diperlukan untuk persistency
+import 'package:stmc_health_app/views/notification/notification_page.dart';
+import 'views/login/login_page.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'global_notification.dart';
-import 'firebase_options.dart'; // Wajib di-import!
+import 'firebase_options.dart';
 
-// Definisikan warna yang digunakan di theme (sesuaikan dengan yang Anda gunakan)
 const Color primaryRed = Color(0xFFC00000);
 
-// Data Model untuk menyimpan state pengguna
+// --- 🌟 1. INISIALISASI PLUGIN NOTIFIKASI GLOBAL ---
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
 class UserState {
   final bool isLoggedIn;
   final String? accessToken;
@@ -54,7 +57,6 @@ class UserState {
     this.kecamatan,
   });
 
-  // Constructor factory yang diperbaiki untuk initial state
   factory UserState.initial() => UserState(
     isLoggedIn: false,
     name: "Tamu",
@@ -66,26 +68,76 @@ class UserState {
   );
 }
 
-// Ini adalah fungsi agar HP tetap bisa menerima notifikasi meski aplikasi sedang ditutup
+// --- 🌟 2. FUNGSI BACKGROUND FIREBASE (SAAT APLIKASI DITUTUP) ---
+@pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   print("Notifikasi Masuk (Background): ${message.notification?.title}");
+
+  // Panggil fungsi alarm keras saat ada pesan masuk di background
+  await _tampilkanNotifikasiSuaraKeras(message);
+}
+
+// --- 🌟 3. FUNGSI PEMBUAT ALARM & POP-UP KERAS ---
+Future<void> _tampilkanNotifikasiSuaraKeras(RemoteMessage message) async {
+  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    'channel_panggilan_poli', // ID Channel (Harus sama dengan di Laravel dan AndroidManifest)
+    'Panggilan Antrean', // Nama Channel
+    channelDescription: 'Channel khusus untuk panggilan masuk dengan suara keras',
+    importance: Importance.max, // 🚨 WAJIB MAX: Memaksa pop-up muncul di atas layar
+    priority: Priority.high,    // 🚨 WAJIB HIGH
+    playSound: true,            // Bunyikan suara
+    enableVibration: true,      // Getarkan HP
+    fullScreenIntent: true,     // 🚨 WAJIB TRUE: Memaksa layar HP menyala
+  );
+
+  const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+
+  final String title = message.notification?.title ?? message.data['title'] ?? 'PANGGILAN POLI!';
+  final String body = message.notification?.body ?? message.data['body'] ?? 'Giliran Anda telah tiba. Silakan masuk.';
+
+  await flutterLocalNotificationsPlugin.show(
+    0, // 🌟 PERBAIKAN: Ubah dari DateTime.now().millisecond menjadi 0 agar selalu menimpa notif lama
+    title,
+    body,
+    platformDetails,
+  );
 }
 
 void main() async {
-  // Wajib dipanggil sebelum menggunakan SharedPreferences
   WidgetsFlutterBinding.ensureInitialized();
 
-  // NYALAKAN TELINGA GLOBAL SEBELUM APLIKASI JALAN
   await GlobalNotificationService().initPusher();
 
-  // Menyalakan mesin Firebase menggunakan konfigurasi otomatis dari FlutterFire CLI
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Mendaftarkan fungsi background
+  // --- 🌟 4. KONFIGURASI NOTIFIKASI LOKAL ---
+  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+  // Daftarkan fungsi background
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // --- 🌟 5. TANGKAP PESAN SAAT APLIKASI SEDANG DIBUKA (FOREGROUND) ---
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    print("Notifikasi Masuk (Foreground): ${message.notification?.title}");
+    _tampilkanNotifikasiSuaraKeras(message);
+
+    // ✅ MASUKKAN NOTIFIKASI FIREBASE KE DALAM HALAMAN NOTIFIKASI
+    final newNotif = {
+      'title': message.notification?.title ?? message.data['title'] ?? 'Pemberitahuan',
+      'body': message.notification?.body ?? message.data['body'] ?? '',
+      'link': message.data['link'] ?? '',
+      'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
+    };
+
+    appNotificationsNotifier.value = [newNotif, ...appNotificationsNotifier.value];
+    hasUnreadNotifNotifier.value = true;
+    NotificationManager.saveUserNotifications(); // Simpan ke HP!
+  });
 
   final AuthService authService = AuthService();
   UserState initialUserState = UserState.initial();
@@ -98,8 +150,6 @@ void main() async {
     try {
       final Map<String, dynamic> userData = jsonDecode(userDataJson);
 
-      // --- PERBAIKAN LOGIKA ROLE ---
-      // Pastikan mengecek is_employee dengan benar sesuai output backend
       dynamic isEmployeeRaw = userData['is_employee'];
       bool isEmployee = (isEmployeeRaw == true ||
           isEmployeeRaw == 1 ||
@@ -107,7 +157,6 @@ void main() async {
 
       String userRole = isEmployee ? 'KARYAWAN' : 'NON_PTST';
 
-      // --- Membuat OBJEK UserState BARU (Karena UserState bersifat final) ---
       initialUserState = UserState(
         isLoggedIn: true,
         accessToken: token,
@@ -116,14 +165,13 @@ void main() async {
         name: userData['nama'],
         displayText: '${userData['no_sap'] ?? userData['nik']} - ${userData['nama']}',
         role: userRole,
-        // Ambil data detail lainnya (pastikan kunci cocok dengan API)
         email: userData['email'],
-        jobTitle: userData['jabatan'], // Asumsi kunci 'jabatan'
+        jobTitle: userData['jabatan'],
         nik: userData['nik'],
         no_hp: userData['no_hp'],
         tinggi_badan: userData['tinggi_badan']?.toString(),
-        berat_badan: userData['berat_badan']?.toString(), // Asumsi kunci ada
-        refreshToken: null, // Jika tidak ada, set null
+        berat_badan: userData['berat_badan']?.toString(),
+        refreshToken: null,
         alamat: userData['alamat'],
         provinsi: userData['provinsi'],
         kabupaten: userData['kabupaten'],
@@ -131,37 +179,39 @@ void main() async {
       );
 
     } catch (e) {
-      // Jika parsing gagal, bersihkan data login agar user harus login lagi
       await authService.clearLoginData();
-      print('Error loading persisted user data: $e'); // Debugging
+      print('Error loading persisted user data: $e');
     }
   }
 
-  // Meneruskan state awal ke MyApp
   runApp(MyApp(initialUserState: initialUserState));
 }
 
 class MyApp extends StatelessWidget {
   final UserState initialUserState;
-
-  // KOREKSI SINTAKSIS: Deklarasi dan inisialisasi ValueNotifier di constructor
   final ValueNotifier<UserState> userStateNotifier;
 
   MyApp({super.key, required this.initialUserState})
-      : userStateNotifier = ValueNotifier<UserState>(initialUserState); // <-- KOREKSI UTAMA
+      : userStateNotifier = ValueNotifier<UserState>(initialUserState);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: navigatorKey, //
+      navigatorKey: navigatorKey,
       title: 'STMC Health',
       home: ValueListenableBuilder<UserState>(
         valueListenable: userStateNotifier,
         builder: (context, userState, child) {
-          // Logika Penentu: Jika isLoggedIn true ke Wrapper, jika false ke Login
           if (userState.isLoggedIn) {
+            // ✅ SAAT LOGIN: Panggil brankas khusus NIK user ini
+            String identifier = userState.sap ?? userState.nik ?? 'unknown';
+            NotificationManager.loadUserNotifications(identifier);
+
             return const MainWrapper();
           } else {
+            // ✅ SAAT LOGOUT: Kunci dan bersihkan brankas dari layar
+            NotificationManager.clearSession();
+
             return LoginPage(userStateNotifier: userStateNotifier);
           }
         },

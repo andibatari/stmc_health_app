@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:pusher_channels_flutter/pusher_channels_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:stmc_health_app/views/notification/notification_page.dart';
 
 // KUNCI GLOBAL: Agar kita bisa memunculkan Pop-Up dari background/halaman manapun
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -52,7 +53,6 @@ class GlobalNotificationService {
   }
 
   void _onPusherEvent(PusherEvent event) {
-
     // TAMBAHKAN LOG UNTUK MELIHAT APAKAH SINYAL MASUK
     debugPrint("PUSHER EVENT DITERIMA: ${event.eventName}");
     debugPrint("DATA: ${event.data}");
@@ -63,8 +63,8 @@ class GlobalNotificationService {
 
         debugPrint("EVENT ID: ${data['jadwalId']} | GLOBAL ID: $globalActiveJadwalId");
 
-        // ✅ TAMBAHAN UTAMA: Siapa pun yang dipanggil, semua halaman (Beranda, Detail, Lingkungan)
-        // harus ikut me-refresh datanya agar sisa antrean dan kepadatan poli selalu akurat.
+        // ✅ TAMBAHAN UTAMA: Siapa pun yang dipanggil, semua halaman
+        // harus ikut me-refresh datanya agar sisa antrean selalu akurat.
         globalRefreshTrigger.value++;
 
         // Cek apakah ID dari Laravel cocok dengan ID global di HP ini
@@ -73,6 +73,26 @@ class GlobalNotificationService {
           _isAlarmActive = true;
           _audioPlayer.setReleaseMode(ReleaseMode.release);
           _audioPlayer.play(AssetSource('audio/ding-dong.wav'));
+
+          // =======================================================
+          // 🔥 PERBAIKAN: SIMPAN KE BRANKAS HALAMAN NOTIFIKASI
+          // =======================================================
+          final newNotif = {
+            'title': 'Panggilan Pemeriksaan',
+            'body': 'Giliran Anda! Silakan segera masuk ke ruangan ${data['namaPoli']}.',
+            'link': '', // Kosongkan jika tidak ada URL lampiran
+            'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
+          };
+
+          // Memasukkan notifikasi baru ke urutan paling atas
+          appNotificationsNotifier.value = [newNotif, ...appNotificationsNotifier.value];
+
+          // Nyalakan bintik merah saat dipanggil!
+          hasUnreadNotifNotifier.value = true;
+
+          // ✅ TAMBAHKAN BARIS INI UNTUK MENYIMPAN KE MEMORI HP
+          NotificationManager.saveUserNotifications();
+          // =======================================================
 
           // MUNCULKAN POP-UP SECARA GLOBAL
           if (navigatorKey.currentContext != null) {
@@ -117,16 +137,14 @@ class GlobalNotificationService {
       }
     }
 
-    //JIKA TERIMA EVENT UPDATE STATUS POLI
+    // JIKA TERIMA EVENT UPDATE STATUS POLI
     if (event.eventName == 'StatusPoliUpdatedEvent' || event.eventName == '.StatusPoliUpdatedEvent') {
       try {
         Map<String, dynamic> data = jsonDecode(event.data.toString());
         int updatedJadwalId = int.parse(data['jadwalId'].toString());
 
         debugPrint("Sinyal Update Status Diterima untuk Jadwal ID: $updatedJadwalId");
-
         globalRefreshTrigger.value++;
-
         debugPrint("🔄 Remote Refresh ditekan! Value sekarang: ${globalRefreshTrigger.value}");
       } catch (e) {
         debugPrint("Error parse StatusPoliUpdatedEvent: $e");

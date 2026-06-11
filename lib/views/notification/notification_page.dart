@@ -1,15 +1,53 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // =======================================================
-// BRANKAS GLOBAL: Untuk menyimpan daftar notifikasi masuk
+// BRANKAS GLOBAL
 // =======================================================
 final ValueNotifier<List<Map<String, dynamic>>> appNotificationsNotifier = ValueNotifier([]);
+final ValueNotifier<bool> hasUnreadNotifNotifier = ValueNotifier(false);
+
+// Menyimpan identitas user yang sedang aktif
+String? activeUserIdentifier;
+
+// =======================================================
+// MANAJER BRANKAS PRIBADI (BARU)
+// =======================================================
+class NotificationManager {
+  // Buka brankas khusus untuk user yang baru login
+  static Future<void> loadUserNotifications(String userIdentifier) async {
+    activeUserIdentifier = userIdentifier;
+    final prefs = await SharedPreferences.getInstance();
+    final String? data = prefs.getString('notifs_$userIdentifier');
+
+    if (data != null) {
+      List<dynamic> decoded = jsonDecode(data);
+      appNotificationsNotifier.value = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+    } else {
+      appNotificationsNotifier.value = [];
+    }
+  }
+
+  // Simpan notifikasi ke memori HP khusus untuk user ini
+  static Future<void> saveUserNotifications() async {
+    if (activeUserIdentifier == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('notifs_$activeUserIdentifier', jsonEncode(appNotificationsNotifier.value));
+  }
+
+  // Bersihkan layar saat Logout
+  static void clearSession() {
+    activeUserIdentifier = null;
+    appNotificationsNotifier.value = [];
+    hasUnreadNotifNotifier.value = false;
+  }
+}
 
 class NotificationPage extends StatelessWidget {
   const NotificationPage({super.key});
 
-  // Fungsi untuk membuka link di browser HP (Chrome/Safari)
   Future<void> _launchURL(BuildContext context, String urlString) async {
     final Uri url = Uri.parse(urlString);
     try {
@@ -37,12 +75,12 @@ class NotificationPage extends StatelessWidget {
         backgroundColor: primaryRed,
         foregroundColor: Colors.white,
         actions: [
-          // Tombol untuk menghapus semua notifikasi
           IconButton(
             icon: const Icon(Icons.delete_sweep),
             tooltip: "Bersihkan Notifikasi",
             onPressed: () {
               appNotificationsNotifier.value = [];
+              NotificationManager.saveUserNotifications(); // Simpan status kosong ke HP
             },
           )
         ],
@@ -51,8 +89,6 @@ class NotificationPage extends StatelessWidget {
       body: ValueListenableBuilder<List<Map<String, dynamic>>>(
         valueListenable: appNotificationsNotifier,
         builder: (context, notifications, child) {
-
-          // JIKA TIDAK ADA NOTIFIKASI
           if (notifications.isEmpty) {
             return Center(
               child: Column(
@@ -69,7 +105,6 @@ class NotificationPage extends StatelessWidget {
             );
           }
 
-          // JIKA ADA NOTIFIKASI
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: notifications.length,
@@ -77,7 +112,7 @@ class NotificationPage extends StatelessWidget {
               final notif = notifications[index];
               final String title = notif['title'] ?? 'Tanpa Judul';
               final String body = notif['body'] ?? '';
-              final String? link = notif['link']; // Mengecek apakah ada link terlampir
+              final String? link = notif['link'];
               final String time = notif['time'] ?? '';
 
               return Card(
@@ -94,10 +129,7 @@ class NotificationPage extends StatelessWidget {
                         children: [
                           Container(
                             padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              shape: BoxShape.circle,
-                            ),
+                            decoration: BoxDecoration(color: Colors.red.shade50, shape: BoxShape.circle),
                             child: const Icon(Icons.notifications_active, color: primaryRed, size: 20),
                           ),
                           const SizedBox(width: 12),
@@ -115,8 +147,6 @@ class NotificationPage extends StatelessWidget {
                           ),
                         ],
                       ),
-
-                      // 🌟 JIKA ADA LINK, TAMPILKAN TOMBOL BUKA LINK 🌟
                       if (link != null && link.isNotEmpty) ...[
                         const Divider(height: 25),
                         SizedBox(

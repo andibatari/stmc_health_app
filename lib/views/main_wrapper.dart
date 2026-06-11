@@ -4,8 +4,7 @@ import 'package:stmc_health_app/views/profile/profile_page.dart';
 import '../main.dart';
 import 'home/home_page.dart';
 import 'home/lingkungan_page.dart';
-import 'home/mcu_page.dart';// Import main.dart untuk UserState
-
+import 'home/mcu_page.dart';
 
 // Definisikan tipe callback
 typedef TabChangeCallback = void Function(int index);
@@ -14,8 +13,6 @@ typedef TabChangeCallback = void Function(int index);
 const Color primaryRed = Color(0xFFC00000);
 
 class MainWrapper extends StatefulWidget {
-  // Tambahkan property untuk mengakses UserState
-  // Ambil userStateNotifier dari context (ValueNotifier di MyApp)
   const MainWrapper({super.key});
 
   @override
@@ -31,15 +28,6 @@ class MainWrapperState extends State<MainWrapper> {
     });
   }
 
-  // Definisikan _pages di sini agar dapat mengakses 'onItemTapped'
-  late final List<Widget> _pages = [
-    // Teruskan onItemTapped. Data User akan diakses melalui ValueListenableBuilder
-    HomePage(onTabChange: onItemTapped),
-    McuPage(),
-    const LingkunganPage(),
-    const ProfilePage()
-  ];
-
   @override
   Widget build(BuildContext context) {
     final userStateNotifier = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier;
@@ -50,52 +38,121 @@ class MainWrapperState extends State<MainWrapper> {
         // 1. Logika penentuan menu
         final bool showLingkunganTab = userState.role == 'KARYAWAN';
 
+        // Susun daftar halaman yang terlihat
         List<Widget> visiblePages = [
           HomePage(onTabChange: onItemTapped),
           const McuPage(),
         ];
+
+        // Susun daftar item navigasi bawah
         List<BottomNavigationBarItem> visibleItems = [
-          const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Beranda'),
-          const BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'MCU'),
+          _buildNavItem(
+              icon: Icons.home_outlined,
+              activeIcon: Icons.home_rounded,
+              label: 'Beranda'
+          ),
+          _buildNavItem(
+              icon: Icons.monitor_heart_rounded,
+              activeIcon: Icons.favorite_rounded,
+              label: 'MCU'
+          ),
         ];
 
         if (showLingkunganTab) {
           visiblePages.add(const LingkunganPage());
-          visibleItems.add(const BottomNavigationBarItem(icon: Icon(Icons.eco_outlined), label: 'Lingkungan'));
+          visibleItems.add(_buildNavItem(
+              icon: Icons.eco_outlined,
+              activeIcon: Icons.eco_rounded,
+              label: 'Lingkungan'
+          ));
         }
 
         visiblePages.add(const ProfilePage());
-        visibleItems.add(const BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'));
+        visibleItems.add(_buildNavItem(
+            icon: Icons.person_outline_rounded,
+            activeIcon: Icons.person_rounded,
+            label: 'Profil'
+        ));
 
         // --- FIX LAYAR MERAH: PENGAMAN INDEKS ---
-        // Jika _selectedIndex lebih besar atau sama dengan jumlah item yang tersedia,
-        // kita paksa balik ke index terakhir (Profile) atau 0 (Beranda).
         int safeIndex = _selectedIndex;
         if (safeIndex >= visibleItems.length) {
-          safeIndex = visibleItems.length - 1; // Pindah ke tab Profile (paling kanan)
+          safeIndex = visibleItems.length - 1;
         }
         if (safeIndex < 0) safeIndex = 0;
 
         return Scaffold(
+          // extendBody di-set true agar konten bisa 'menyelusup' di bawah navigasi yang melayang
+          extendBody: true,
           body: IndexedStack(
             index: safeIndex,
             children: visiblePages,
           ),
-          bottomNavigationBar: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: primaryRed,
-            unselectedItemColor: Colors.grey,
-            currentIndex: safeIndex, // Gunakan safeIndex
-            onTap: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
-            items: visibleItems,
+          // Navigasi bawah dibungkus dengan Container agar bisa dimodifikasi ala 'Floating'
+          bottomNavigationBar: SafeArea(
+            child: Container(
+              margin: const EdgeInsets.only(left: 20, right: 20, bottom: 20), // Memberi jarak agar melayang
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30), // Ujung melengkung modern
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  )
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(30),
+                child: BottomNavigationBar(
+                  type: BottomNavigationBarType.fixed,
+                  backgroundColor: Colors.white,
+                  elevation: 0, // Matikan elevasi bawaan karena sudah pakai shadow di Container
+                  selectedItemColor: primaryRed,
+                  unselectedItemColor: Colors.grey.shade400,
+                  selectedFontSize: 12,
+                  unselectedFontSize: 12,
+                  selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w800, height: 1.5),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, height: 1.5),
+                  currentIndex: safeIndex,
+                  onTap: (index) {
+                    setState(() {
+                      _selectedIndex = index;
+                    });
+                  },
+                  items: visibleItems,
+                ),
+              ),
+            ),
           ),
         );
       },
     );
   }
-}
 
+  // Helper untuk membuat item navigasi dengan gaya "Active Pill"
+  BottomNavigationBarItem _buildNavItem({
+    required IconData icon,
+    required IconData activeIcon,
+    required String label
+  }) {
+    return BottomNavigationBarItem(
+      icon: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Icon(icon, size: 26),
+      ),
+      // Tampilan saat item sedang dipilih (aktif)
+      activeIcon: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: primaryRed.withOpacity(0.1), // Efek background transparan
+          borderRadius: BorderRadius.circular(20), // Pill shape
+        ),
+        child: Icon(activeIcon, size: 26, color: primaryRed),
+      ),
+      label: label,
+    );
+  }
+}

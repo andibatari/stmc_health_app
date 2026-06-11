@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:stmc_health_app/constants.dart'; // Sesuaikan path
 import '../models/user_profile.dart'; // Sesuaikan path
@@ -20,15 +21,24 @@ class AuthService {
   static const String _kAccessTokenKey = 'accessToken';
   static const String _kUserDataKey = 'userData';
 
-  Future<Map<String, dynamic>> login(String identifier, String password) async {
+  // 🌟 PERBAIKAN: Menambahkan parameter opsional fcmToken
+  Future<Map<String, dynamic>> login(String identifier, String password, {String? fcmToken}) async {
     try {
+      // Siapkan data yang akan dikirim
+      Map<String, dynamic> requestBody = {
+        'identifier': identifier,
+        'password': password,
+      };
+
+      // Jika token berhasil didapatkan dari HP, masukkan ke keranjang pengiriman
+      if (fcmToken != null && fcmToken.isNotEmpty) {
+        requestBody['fcm_token'] = fcmToken;
+      }
+
       final response = await http.post(
         Uri.parse(loginUrl),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'identifier': identifier,
-          'password': password,
-        }),
+        body: jsonEncode(requestBody), // Kirim data beserta tokennya
       );
 
       final responseBody = jsonDecode(response.body);
@@ -152,6 +162,14 @@ class AuthService {
     if (authToken == null) {
       final data = await getPersistedLoginData();
       authToken = data?['accessToken'];
+    }
+
+    // 🌟 PERBAIKAN PENTING: Matikan antena notifikasi HP sebelum keluar!
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+      print("Antena FCM berhasil dimatikan saat logout.");
+    } catch (e) {
+      print("Gagal mematikan antena FCM: $e");
     }
 
     if (authToken == null) {

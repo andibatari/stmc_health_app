@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../main.dart';
 import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
-import '../main_wrapper.dart'; // Import untuk mengakses UserState dan MyApp
+import '../main_wrapper.dart';
 
 const Color primaryRed = Color(0xFFC00000);
-const Color secondaryRed = Color(0xFF8B0000); // Warna merah tua untuk tombol
+const Color secondaryRed = Color(0xFF8B0000);
 
 class LoginPage extends StatefulWidget {
   final ValueNotifier<UserState> userStateNotifier;
@@ -21,70 +22,133 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _passwordController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  bool _obscureText = true; // Untuk toggle visibility password
-  bool _isLoading = false; // Status loading untuk tombol
-
-  // Inisiasi service
+  bool _obscureText = true;
+  bool _isLoading = false;
   final AuthService _authService = AuthService();
 
+  // 🌟 FUNGSI BARU: MENANGANI TOMBOL LUPA PASSWORD DENGAN INTERAKSI PREMIUM
+  void _showForgotPasswordBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(28),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 50,
+                  height: 5,
+                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 25),
+              const Row(
+                children: [
+                  Icon(Icons.lock_reset_rounded, color: primaryRed, size: 28),
+                  SizedBox(width: 12),
+                  Text("Pemulihan Kata Sandi", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.black87)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "Untuk alasan keamanan data rekam medis (MCU), reset kata sandi akun karyawan dan pasien wajib melalui sistem verifikasi internal.",
+                style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.5, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+                child: const Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.admin_panel_settings_rounded, color: primaryRed, size: 20),
+                        SizedBox(width: 10),
+                        Text("Langkah Pemulihan:", style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87)),
+                      ],
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      "Silakan kunjungi Ruang Admin IT / K3LL Semen Tonasa Medical Centre dengan membawa NIK/KTP untuk mencocokkan identitas fisik Anda.",
+                      style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.5),
+                    )
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryRed,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: const Text("Mengerti", style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _handleLogin() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
 
-    setState(() {
-      _isLoading = true; // Mulai loading
-    });
-
-
-    final String identifier = _identifierController.text; // SAP/NIK/Email
+    final String identifier = _identifierController.text;
     final String password = _passwordController.text;
 
-    // --- LOGIKA API LOGIN ---
-    final result = await _authService.login(identifier, password);
+    // 🌟 FUNGSI BARU: MENGAMBIL FCM TOKEN SEBELUM LOGIN
+    String? fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+      debugPrint("FCM Token HP ini: $fcmToken"); // Cek di terminal apakah token berhasil didapat
+    } catch (e) {
+      debugPrint("Gagal mengambil FCM token: $e");
+    }
 
-    setState(() {
-      _isLoading = false; // Selesai loading
-    });
+    // 🌟 PERBAIKAN: Kirim identifier, password, dan fcmToken ke server
+    final result = await _authService.login(identifier, password, fcmToken: fcmToken);
+
+    setState(() => _isLoading = false);
 
     if (result['success'] == true) {
-      // Ambil data yang dikembalikan dari AuthService
       final Map<String, dynamic> userData = result['userData'] as Map<String, dynamic>;
       final String accessToken = result['accessToken'] as String;
-      // final String refreshToken = result['refreshToken'] as String; // Jika ada
 
-      // Asumsi: Kita masih mengambil data profil dari model lama,
-      // tetapi data yang lebih lengkap harus ada di `userData`.
-      // Ambil data penting dari userData untuk tampilan cepat
       final String? noSap = userData['no_sap'] ?? userData['nik'];
       final String? nama = userData['nama'];
       final String? email = userData['email'];
       final String? jobTitle = userData['jabatan'];
       final String? nik = userData['nik'];
       final String? noHp = userData['no_hp'];
-      // final String userRole = (userData['isEmployee'] == true) ? 'KARYAWAN' : 'NON_KARYAWAN';
+
       dynamic isEmployeeRaw = userData['isEmployee'] ?? userData['is_employee'];
-
-      // Konversi nilai mentah menjadi boolean yang pasti
       final bool isEmployee = isEmployeeRaw != null &&
-          (isEmployeeRaw == true ||
-              isEmployeeRaw == 1 ||
-              isEmployeeRaw.toString().toLowerCase() == 'true');
-
+          (isEmployeeRaw == true || isEmployeeRaw == 1 || isEmployeeRaw.toString().toLowerCase() == 'true');
       final String userRole = isEmployee ? 'KARYAWAN' : 'NON_PTST';
 
-      // --- Update state aplikasi (UserState) DENGAN TOKEN & DATA LENGKAP ---
       widget.userStateNotifier.value = UserState(
         isLoggedIn: true,
-        // Data Penting untuk Otorisasi API
-        accessToken: accessToken,           // <--- SIMPAN TOKEN
-        // refreshToken: refreshToken,       // SIMPAN REFRESH TOKEN (jika ada)
-        userData: userData,                 // <--- SIMPAN DATA LENGKAP DARI API
-
-        // Data untuk Tampilan Cepat
-        sap: userData['no_sap'] ?? userData['nik'],
-        name: userData['nama'],
-        displayText: '${userData['no_sap'] ?? userData['nik']} - ${userData['nama']}',
+        accessToken: accessToken,
+        userData: userData,
+        sap: noSap,
+        name: nama,
+        displayText: '$noSap - $nama',
         role: userRole,
         email: email,
         jobTitle: jobTitle,
@@ -92,21 +156,20 @@ class _LoginPageState extends State<LoginPage> {
         no_hp: noHp,
       );
 
-      // Navigasi ke MainWrapper setelah login berhasil
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const MainWrapper()),
         );
       }
-
     } else {
-      // Tampilkan error (Tetap sama)
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] as String),
             backgroundColor: secondaryRed,
             duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
@@ -116,196 +179,99 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey[50],
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.only(top: 60.0, left: 32.0, right: 32.0, bottom: 32.0),
+          padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 40.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // --- Logo dan Tagline ---
-              Image.asset(
-                'assets/images/logo-stmc.png', // Ganti dengan path logo Anda yang benar
-                height: 60,
-              ),
-              const SizedBox(height: 5),
-              const Text(
-                "STMC",
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: primaryRed,
-                  height: 0.9, // Untuk mendekatkan teks
-                ),
-              ),
-              const Text(
-                "Semen Tonasa Medical Centre",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: primaryRed,
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                "Together We Build a Better Future",
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: primaryRed,
-                    fontStyle: FontStyle.italic
-                ),
-              ),
-
-              const SizedBox(height: 60),
-
-              // --- Kartu Login ---
               Container(
-                padding: const EdgeInsets.all(24.0),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    shape: BoxShape.circle,
                     boxShadow: [
-                      BoxShadow(
-                        color: primaryRed.withOpacity(0.3),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                    border: Border.all(color: primaryRed.withOpacity(0.5))
+                      BoxShadow(color: primaryRed.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 8)),
+                    ]
+                ),
+                child: Image.asset('assets/images/logo-stmc.png', height: 70),
+              ),
+              const SizedBox(height: 15),
+              const Text("STMC HEALTH", style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: primaryRed, letterSpacing: 1.2)),
+              const Text("Semen Tonasa Medical Centre", style: TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 5),
+              const Text("\"Together We Build a Better Future\"", style: TextStyle(fontSize: 12, color: Colors.black54, fontStyle: FontStyle.italic)),
+              const SizedBox(height: 45),
+
+              Container(
+                padding: const EdgeInsets.all(28.0),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 10)),
+                  ],
                 ),
                 child: Form(
                   key: _formKey,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        "LOGIN",
-                        style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            color: primaryRed,
-                            letterSpacing: 1.5
-                        ),
+                      const Center(
+                        child: Text("Masuk ke Akun Anda", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.black87)),
                       ),
                       const SizedBox(height: 30),
 
-                      // --- Input No. SAP ---
                       TextFormField(
                         controller: _identifierController,
                         keyboardType: TextInputType.text,
-                        decoration: _buildInputDecoration(
-                          Icons.person, "SAP/NIK/Email",
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Nomor identitas harus diisi';
-                          }
-                          return null;
-                        },
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        decoration: _buildInputDecoration(Icons.badge_rounded, "SAP / NIK / Email"),
+                        validator: (value) => value == null || value.isEmpty ? 'Identitas wajib diisi' : null,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 18),
 
-                      // --- Input Password ---
                       TextFormField(
                         controller: _passwordController,
                         obscureText: _obscureText,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                         decoration: _buildInputDecoration(
-                          Icons.lock, "Password",
+                          Icons.lock_rounded, "Kata Sandi",
                           suffixIcon: IconButton(
-                            icon: Icon(
-                                _obscureText ? Icons.visibility_off : Icons.visibility,
-                                color: primaryRed.withOpacity(0.7),
-                                size: 20
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscureText = !_obscureText;
-                              });
-                            },
+                            icon: Icon(_obscureText ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: Colors.grey[500], size: 22),
+                            onPressed: () => setState(() => _obscureText = !_obscureText),
                           ),
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Password harus diisi';
-                          }
-                          return null;
-                        },
+                        validator: (value) => value == null || value.isEmpty ? 'Kata sandi wajib diisi' : null,
                       ),
-                      const SizedBox(height: 5),
 
-                      // --- Lupa Password ---
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () {
-                            // TODO: Implementasi navigasi Lupa Password
-                          },
-                          child: const Text(
-                            "Lupa Password?",
-                            style: TextStyle(
-                              color: primaryRed,
-                              fontSize: 12,
-                            ),
-                          ),
+                          onPressed: () => _showForgotPasswordBottomSheet(context), // 🌟 DIHUBUNGKAN KE BOTTOM SHEET
+                          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 30), alignment: Alignment.centerRight),
+                          child: const Text("Lupa Password?", style: TextStyle(color: primaryRed, fontSize: 13, fontWeight: FontWeight.w700)),
                         ),
                       ),
-                      const SizedBox(height: 15),
+                      const SizedBox(height: 10),
 
-                      // --- Tombol LOGIN ---
                       SizedBox(
                         width: double.infinity,
-                        height: 50,
+                        height: 55,
                         child: ElevatedButton(
-                          onPressed: _isLoading ? null : _handleLogin, // Non-aktifkan saat loading
+                          onPressed: _isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(
-                              backgroundColor: secondaryRed,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              elevation: 5
+                            backgroundColor: primaryRed,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            elevation: 0,
                           ),
                           child: _isLoading
-                              ? const SizedBox( // Tampilkan indicator saat loading
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 3,
-                            ),
-                          )
-                              : const Text(
-                            "LOGIN",
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                              ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+                              : const Text("LOGIN", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
                         ),
                       ),
-                      const SizedBox(height: 15),
-
-                      // // --- Sign Up ---
-                      // Row(
-                      //   mainAxisAlignment: MainAxisAlignment.center,
-                      //   children: [
-                      //     const Text(
-                      //       "Belum punya akun? ",
-                      //       style: TextStyle(color: Colors.black54),
-                      //     ),
-                      //     InkWell(
-                      //       onTap: () {
-                      //         // TODO: Implementasi navigasi Sign Up
-                      //       },
-                      //       child: const Text(
-                      //         "Sign Up",
-                      //         style: TextStyle(
-                      //           color: primaryRed,
-                      //           fontWeight: FontWeight.bold,
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ],
-                      // ),
                     ],
                   ),
                 ),
@@ -321,31 +287,14 @@ class _LoginPageState extends State<LoginPage> {
     return InputDecoration(
       filled: true,
       fillColor: Colors.grey[100],
-      prefixIcon: Icon(icon, color: primaryRed.withOpacity(0.7)),
+      prefixIcon: Icon(icon, color: primaryRed.withOpacity(0.8), size: 22),
       hintText: label,
-      hintStyle: TextStyle(color: Colors.grey[700]),
+      hintStyle: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.w500),
       suffixIcon: suffixIcon,
       contentPadding: const EdgeInsets.symmetric(vertical: 18),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade300, width: 1),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: primaryRed, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.red, width: 2),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.red, width: 2),
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: primaryRed, width: 1.5)),
+      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.red.shade300, width: 1.5)),
     );
   }
 }

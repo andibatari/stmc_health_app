@@ -8,17 +8,18 @@ import '../../services/auth_service.dart';
 import '../notification/notification_page.dart';
 import 'lingkungan_page.dart';
 import 'mcu_page.dart';
-import '../notification/notification_page.dart'; // Import halaman notifikasi yang baru dibuat
 import 'package:intl/intl.dart'; // Jika belum ada, untuk format tanggal
 
 // Definisi warna utama yang digunakan dalam desain
 const Color primaryRed = Color(0xFFC00000);
-const Color lightRed = Color(0xFFFBECEC); // Untuk latar belakang icon MCU
-// Definisikan tipe callback
+const Color darkRed = Color(0xFF8B0000);
+const Color lightRed = Color(0xFFFBECEC);
+const Color bgGrey = Color(0xFFF8F9FA); // Background yang lebih lembut
+
 typedef TabChangeCallback = void Function(int index);
 
 // =========================================================
-// 1. UBAH HOMEPAGE MENJADI STATEFUL WIDGET AGAR BISA INITSTATE
+// 1. HOMEPAGE & FIREBASE LOGIC (FUNGSI TIDAK DIUBAH)
 // =========================================================
 class HomePage extends StatefulWidget {
   final TabChangeCallback onTabChange;
@@ -30,19 +31,48 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // 1. TAMBAHKAN VARIABEL PENGAMAN INI DI ATAS initState
   bool _isNotificationSetupRunning = false;
 
   @override
   void initState() {
     super.initState();
-    // 2. Panggil fungsi Firebase saat Beranda dimuat
     setupPushNotification();
   }
 
-  // =========================================================
-  // 3. LOGIKA INTI FIREBASE CLOUD MESSAGING (FCM)
-  // =========================================================
+  // Fungsi khusus untuk menyimpan notif ke brankas
+  void _simpanNotifKeBrankas(RemoteMessage message) {
+    // 1. Ekstrak data sekuat mungkin (Cek dari 'notification', jika gagal cek dari 'data')
+    String title = "Pengingat MCU";
+    String body = "Anda memiliki pengumuman baru terkait jadwal MCU.";
+    String link = "";
+
+    if (message.notification != null) {
+      title = message.notification!.title ?? title;
+      body = message.notification!.body ?? body;
+    }
+
+    if (message.data.isNotEmpty) {
+      title = message.data['title'] ?? title;
+      body = message.data['body'] ?? message.data['message'] ?? body;
+      link = message.data['link'] ?? message.data['url'] ?? "";
+    }
+
+    final newNotif = {
+      'title': title,
+      'body': body,
+      'link': link,
+      'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
+    };
+
+    // 2. Simpan ke brankas dengan List BARU agar UI pasti ter-trigger (merender ulang)
+    final currentList = List<Map<String, dynamic>>.from(appNotificationsNotifier.value);
+    currentList.insert(0, newNotif); // Masukkan di urutan paling atas
+    appNotificationsNotifier.value = currentList;
+
+    // 3. Nyalakan Bintik Merah
+    hasUnreadNotifNotifier.value = true;
+  }
+
   void setupPushNotification() async {
     if (_isNotificationSetupRunning) return;
     _isNotificationSetupRunning = true;
@@ -58,47 +88,60 @@ class _HomePageState extends State<HomePage> {
         sendTokenToLaravel(token);
       }
 
-      // 1. TANGKAP NOTIF SAAT APLIKASI TERBUKA (Foreground)
+      // KONDISI 1: TANGKAP NOTIF SAAT APLIKASI TERBUKA DI LAYAR (Foreground)
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        if (message.notification != null) {
+        _simpanNotifKeBrankas(message);
 
-          // SIMPAN KE BRANKAS GLOBAL
-          final newNotif = {
-            'title': message.notification!.title,
-            'body': message.notification!.body,
-            'link': message.data['link'] ?? message.data['url'], // Menangkap link dari Payload Laravel
-            'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
-          };
-          appNotificationsNotifier.value = [newNotif, ...appNotificationsNotifier.value];
-
-          // TAMPILKAN POP-UP SEPERTI BIASA
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Text(message.notification!.title ?? "Pengumuman"),
-              content: Text(message.notification!.body ?? ""),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Tutup", style: TextStyle(color: primaryRed)),
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Text(message.notification?.title ?? "Pengumuman", style: const TextStyle(fontWeight: FontWeight.bold)),
+            content: Text(message.notification?.body ?? ""),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Tutup", style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryRed,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
-                  },
-                  child: const Text("Lihat", style: TextStyle(color: Colors.blue)),
-                )
-              ],
-            ),
-          );
-        }
+                onPressed: () {
+                  // Matikan bintik merah saat dilihat
+                  hasUnreadNotifNotifier.value = false;
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
+                },
+                child: const Text("Lihat", style: TextStyle(color: Colors.white)),
+              )
+            ],
+          ),
+        );
       });
 
-      // 2. TANGKAP NOTIF JIKA DIKLIK DARI LUAR APLIKASI (Background)
+      // KONDISI 2: TANGKAP NOTIF SAAT APLIKASI DI-MINIMIZE (Background)
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        // Otomatis arahkan ke halaman notifikasi
+        _simpanNotifKeBrankas(message);
+        hasUnreadNotifNotifier.value = false; // Matikan bintik merah
         Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
+      });
+
+      // KONDISI 3: TANGKAP NOTIF SAAT APLIKASI DITUTUP TOTAL (Terminated)
+      // Gunakan .then() agar tidak memblokir proses rendering HomePage
+      FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? initialMessage) {
+        if (initialMessage != null) {
+          _simpanNotifKeBrankas(initialMessage);
+          hasUnreadNotifNotifier.value = false; // Matikan bintik merah
+
+          // Beri delay 1 detik agar HomePage selesai di-render sebelum dipaksa pindah layar
+          Future.delayed(const Duration(milliseconds: 1000), () {
+            if (mounted) {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
+            }
+          });
+        }
       });
 
     } catch (e) {
@@ -111,7 +154,6 @@ class _HomePageState extends State<HomePage> {
   void sendTokenToLaravel(String? token) async {
     if (token == null) return;
 
-    // Ambil ID Karyawan dari Global State yang ada di MyApp
     final myApp = context.findAncestorWidgetOfExactType<MyApp>();
     final userId = myApp?.userStateNotifier.value.userData?['id'];
 
@@ -128,11 +170,9 @@ class _HomePageState extends State<HomePage> {
       }
     }
   }
-  // =========================================================
 
   @override
   Widget build(BuildContext context) {
-    /// Pastikan MyApp sudah terbungkus dengan benar di main.dart
     final myApp = context.findAncestorWidgetOfExactType<MyApp>();
     if (myApp == null) return const SizedBox.shrink();
 
@@ -141,76 +181,77 @@ class _HomePageState extends State<HomePage> {
     return ValueListenableBuilder<UserState>(
       valueListenable: userStateNotifier,
       builder: (context, userState, child) {
-        return RefreshIndicator(
-          color: primaryRed,
-          onRefresh: () async {
-            try {
-              // 1. Ambil data terbaru dari penyimpanan lokal (SharedPreferences)
-              final authService = AuthService();
-              final loginData = await authService.getPersistedLoginData();
+        return Scaffold(
+          backgroundColor: bgGrey, // Background lebih elegan
+          body: RefreshIndicator(
+            color: primaryRed,
+            backgroundColor: Colors.white,
+            onRefresh: () async {
+              try {
+                final authService = AuthService();
+                final loginData = await authService.getPersistedLoginData();
 
-              if (loginData != null) {
-                final userData = loginData['userData'];
+                if (loginData != null) {
+                  final userData = loginData['userData'];
+                  dynamic isEmployeeRaw = userData['is_employee'] ??
+                      userData['isEmployee'];
+                  bool isEmployee = (isEmployeeRaw == true ||
+                      isEmployeeRaw == 1 || isEmployeeRaw.toString() == 'true');
+                  String updatedRole = isEmployee ? 'KARYAWAN' : 'NON_PTST';
 
-                // 2. Logika penentuan role (Karyawan/Non-Karyawan)
-                dynamic isEmployeeRaw = userData['is_employee'] ?? userData['isEmployee'];
-                bool isEmployee = (isEmployeeRaw == true || isEmployeeRaw == 1 || isEmployeeRaw.toString() == 'true');
-                String updatedRole = isEmployee ? 'KARYAWAN' : 'NON_PTST';
+                  String? updatedName = userData['nama'];
+                  String? updatedSap = userData['no_sap'] ?? userData['nik'];
 
-                String? updatedName = userData['nama'];
-                String? updatedSap = userData['no_sap'] ?? userData['nik'];
-
-                // 3. Update state global
-                userStateNotifier.value = UserState(
-                  isLoggedIn: true,
-                  accessToken: loginData['accessToken'],
-                  userData: userData,
-                  name: updatedName,
-                  sap: updatedSap,
-                  displayText: '$updatedSap - $updatedName',
-                  role: updatedRole,
-                  jobTitle: userData['jabatan'],
-                  email: userData['email'],
-                  nik: userData['nik'],
-                  no_hp: userData['no_hp'],
-                  tinggi_badan: userData['tinggi_badan']?.toString(),
-                  berat_badan: userData['berat_badan']?.toString(),
-                  alamat: userData['alamat'],
-                  provinsi: userData['provinsi'],
-                  kabupaten: userData['kabupaten'],
-                  kecamatan: userData['kecamatan'],
-                );
+                  userStateNotifier.value = UserState(
+                    isLoggedIn: true,
+                    accessToken: loginData['accessToken'],
+                    userData: userData,
+                    name: updatedName,
+                    sap: updatedSap,
+                    displayText: '$updatedSap - $updatedName',
+                    role: updatedRole,
+                    jobTitle: userData['jabatan'],
+                    email: userData['email'],
+                    nik: userData['nik'],
+                    no_hp: userData['no_hp'],
+                    tinggi_badan: userData['tinggi_badan']?.toString(),
+                    berat_badan: userData['berat_badan']?.toString(),
+                    alamat: userData['alamat'],
+                    provinsi: userData['provinsi'],
+                    kabupaten: userData['kabupaten'],
+                    kecamatan: userData['kecamatan'],
+                  );
+                }
+                await Future.delayed(const Duration(seconds: 1));
+                if (context.mounted) {
+                  (context as Element).markNeedsBuild();
+                }
+              } catch (e) {
+                debugPrint("Error saat refresh: $e");
               }
-
-              await Future.delayed(const Duration(seconds: 1));
-
-              if (context.mounted) {
-                (context as Element).markNeedsBuild();
-              }
-            } catch (e) {
-              debugPrint("Error saat refresh: $e");
-            }
-          },
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // PERHATIKAN: Karena ini StatefulWidget, akses fungsi dari luar harus menggunakan 'widget.'
-                HomeHeader(userState: userState, onTabChange: widget.onTabChange),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 10),
-                      LayananLainnya(onTabChange: widget.onTabChange, userState: userState),
-                      const SizedBox(height: 25),
-                      JadwalMedicalCheckUpAPI(),
-                    ],
+            },
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  HomeHeader(
+                      userState: userState, onTabChange: widget.onTabChange),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20.0, vertical: 24.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LayananLainnya(onTabChange: widget.onTabChange,
+                            userState: userState),
+                        const SizedBox(height: 30),
+                        JadwalMedicalCheckUpAPI(),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -219,10 +260,10 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// --- WIDGET UNTUK BAGIAN HEADER---
-
+// =========================================================
+// 2. HEADER MODERN BERGRADIEN
+// =========================================================
 class HomeHeader extends StatelessWidget {
-  // Tambahkan parameter untuk menerima data user
   final UserState userState;
   final TabChangeCallback onTabChange;
 
@@ -231,46 +272,85 @@ class HomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final McuService mcuService = McuService();
+    final topPadding = MediaQuery.of(context).padding.top;
+
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(color: primaryRed),
-      padding: const EdgeInsets.fromLTRB(16, 35, 16, 20),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [primaryRed, darkRed],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(35),
+          bottomRight: Radius.circular(35),
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(20, topPadding + 15, 20, 30),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Image.asset(
-                'assets/images/logo-stmc.png',
-                width: 55,
-                height: 55,
-                fit: BoxFit.contain,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Image.asset(
+                  'assets/images/logo-stmc.png',
+                  width: 45,
+                  height: 45,
+                  fit: BoxFit.contain,
+                ),
               ),
-              ValueListenableBuilder<List<Map<String, dynamic>>>(
-                  valueListenable: appNotificationsNotifier,
-                  builder: (context, notifications, child) {
+              ValueListenableBuilder<bool>(
+                  valueListenable: hasUnreadNotifNotifier,
+                  builder: (context, hasUnread, child) {
                     return Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        IconButton(
-                          onPressed: () {
-                            // Pindah ke Halaman Notifikasi
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const NotificationPage()),
-                            );
+                        InkWell(
+                          onTap: () {
+                            // ✅ 1. MATIKAN BINTIK MERAH DULU
+                            hasUnreadNotifNotifier.value = false;
+
+                            // ✅ 2. BERI JEDA SEDIKIT AGAR UI SEMPAT UPDATE SEBELUM PINDAH HALAMAN
+                            Future.delayed(const Duration(milliseconds: 100), () {
+                              if (context.mounted) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const NotificationPage()),
+                                );
+                              }
+                            });
                           },
-                          icon: const Icon(Icons.notifications_none, color: Colors.white, size: 28),
+                          borderRadius: BorderRadius.circular(50),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 28),
+                          ),
                         ),
 
-                        // BINTIK MERAH JIKA ADA NOTIFIKASI
-                        if (notifications.isNotEmpty)
+                        // ✅ TAMPILKAN BINTIK MERAH HANYA JIKA ADA YANG BELUM DIBACA
+                        if (hasUnread)
                           Positioned(
-                            right: 12,
-                            top: 12,
+                            right: 2,
+                            top: 2,
                             child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.orangeAccent,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: primaryRed, width: 2),
+                              ),
                             ),
                           )
                       ],
@@ -280,41 +360,40 @@ class HomeHeader extends StatelessWidget {
             ],
           ),
 
-          SizedBox(height: 22),
+          const SizedBox(height: 25),
 
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                  flex: 2,
-                  child: _buildWelcomeCardModern(userState)),
-              const SizedBox(width: 14),
-              Expanded(
-                flex: 1,
-                // ✅ BUNGKUS DENGAN ValueListenableBuilder
-                child: ValueListenableBuilder<int>(
-                  valueListenable: globalRefreshTrigger,
-                  builder: (context, triggerValue, child) {
-                    return FutureBuilder<Map<String, dynamic>>(
-                      future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
-                      builder: (context, snapshot) {
-                        String antreanUser = "-";
-                        if (snapshot.hasData && snapshot.data!['success'] == true) {
-                          List aktif = snapshot.data!['aktif'];
-                          if (aktif.isNotEmpty) {
-                            antreanUser = aktif.first['no_antrean'] ?? "-";
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 5, child: _buildWelcomeCardModern(userState)),
+                const SizedBox(width: 15),
+                Expanded(
+                  flex: 3,
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: globalRefreshTrigger,
+                    builder: (context, triggerValue, child) {
+                      return FutureBuilder<Map<String, dynamic>>(
+                        future: mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!),
+                        builder: (context, snapshot) {
+                          String antreanUser = "-";
+                          if (snapshot.hasData && snapshot.data!['success'] == true) {
+                            List aktif = snapshot.data!['aktif'];
+                            if (aktif.isNotEmpty) {
+                              antreanUser = aktif.first['no_antrean'] ?? "-";
+                            }
                           }
-                        }
-                        return _buildQueueCardModern(antreanUser);
-                      },
-                    );
-                  },
-                ),
-              )
-            ],
+                          return _buildQueueCardModern(antreanUser);
+                        },
+                      );
+                    },
+                  ),
+                )
+              ],
+            ),
           ),
 
-          SizedBox(height: 18),
+          const SizedBox(height: 20),
           _buildRegistrationButtonModern(context, onTabChange),
         ],
       ),
@@ -323,39 +402,47 @@ class HomeHeader extends StatelessWidget {
 
   Widget _buildWelcomeCardModern(UserState userState) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 3))
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 5))
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            "Together We Build a Better Future",
-            style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: primaryRed,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: lightRed,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              "Together We Build a Better Future",
+              style: TextStyle(
+                fontStyle: FontStyle.italic,
+                color: primaryRed,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          const SizedBox(height: 6),
-          const Text("Selamat Datang,", style: TextStyle(color: Colors.black54, fontSize: 14)),
-          const SizedBox(height: 2),
+          const SizedBox(height: 12),
+          const Text("Selamat Datang,", style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
           Text(
-            // Tampilkan data user yang login
             userState.displayText ?? "Pengguna",
-
             style: const TextStyle(
-              fontSize: 16.5,
-              fontWeight: FontWeight.w700,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
               color: Colors.black87,
-              letterSpacing: 0.2,
+              height: 1.2,
             ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           )
         ],
       ),
@@ -364,22 +451,28 @@ class HomeHeader extends StatelessWidget {
 
   Widget _buildQueueCardModern(String noAntrean) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 3))
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 5))
         ],
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Text("ANTREAN", style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w700, color: Colors.black87)),
-          const SizedBox(height: 4),
-          FittedBox( // Agar teks panjang tidak overflow
-            child: Text(noAntrean, style: const TextStyle(
-                fontSize: 32, fontWeight: FontWeight.w900, color: primaryRed)),
+              fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey, letterSpacing: 1.2)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: Text(
+                  noAntrean,
+                  style: const TextStyle(fontWeight: FontWeight.w900, color: primaryRed)
+              ),
+            ),
           ),
         ],
       ),
@@ -388,17 +481,21 @@ class HomeHeader extends StatelessWidget {
 
   Widget _buildRegistrationButtonModern(BuildContext context, TabChangeCallback onTabChange) {
     return Container(
-      height: 64,
+      height: 65,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          colors: [Colors.white, Color(0xFFF5F5F5)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, 4))
+          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(0, 5))
         ],
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(20),
         child: InkWell(
           onTap: () {
             Navigator.push(
@@ -406,17 +503,27 @@ class HomeHeader extends StatelessWidget {
               MaterialPageRoute(builder: (context) => const McuPendaftaranPage()),
             );
           },
-          borderRadius: BorderRadius.circular(14),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 18),
+          borderRadius: BorderRadius.circular(20),
+          highlightColor: lightRed,
+          splashColor: lightRed.withOpacity(0.5),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Icon(Icons.assignment_turned_in_rounded, color: primaryRed, size: 27),
-                SizedBox(width: 13),
-                Expanded(
-                  child: Text("Registration Medical Check Up", style: TextStyle(
-                      fontSize: 15.8, fontWeight: FontWeight.w700, color: Colors.black87)),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: lightRed,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.assignment_turned_in_rounded, color: primaryRed, size: 24),
                 ),
+                const SizedBox(width: 15),
+                const Expanded(
+                  child: Text("Pendaftaran Medical Check Up", style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800, color: Colors.black87)),
+                ),
+                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 16),
               ],
             ),
           ),
@@ -426,37 +533,36 @@ class HomeHeader extends StatelessWidget {
   }
 }
 
-// --- WIDGET UNTUK BAGIAN LAYANAN LAINNYA ---
-
+// =========================================================
+// 3. LAYANAN LAINNYA WIDGET
+// =========================================================
 class LayananLainnya extends StatelessWidget {
   final TabChangeCallback onTabChange;
   final UserState userState;
 
-  LayananLainnya({super.key, required this.onTabChange, required this.userState});
+  const LayananLainnya({super.key, required this.onTabChange, required this.userState});
 
   void _showAccessDeniedDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Row(
             children: [
-              Icon(Icons.lock_outline, color: primaryRed, size: 28),
+              Icon(Icons.lock_outline_rounded, color: primaryRed, size: 28),
               SizedBox(width: 10),
               Text("Akses Ditolak", style: TextStyle(color: primaryRed, fontWeight: FontWeight.bold)),
             ],
           ),
           content: const Text(
             "Fitur Pemantauan Lingkungan hanya tersedia untuk Karyawan PT Semen Tonasa. Anda tidak memiliki hak akses.",
-            style: TextStyle(fontSize: 15),
+            style: TextStyle(fontSize: 15, height: 1.4),
           ),
           actions: [
             TextButton(
-              child: const Text("Tutup", style: TextStyle(color: primaryRed)),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              child: const Text("Mengerti", style: TextStyle(color: primaryRed, fontWeight: FontWeight.bold)),
+              onPressed: () => Navigator.of(context).pop(),
             ),
           ],
         );
@@ -472,27 +578,24 @@ class LayananLainnya extends StatelessWidget {
       children: [
         const Text(
           'Layanan Lainnya',
-          style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
+          style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.w800, color: Colors.black87),
         ),
-        const SizedBox(height: 15),
+        const SizedBox(height: 18),
         Row(
-          mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
-            InkWell(
-              onTap: () {
-                onTabChange(1);
-              },
-              child: _buildServiceIcon(
-                icon: Icons.favorite,
-                label: 'MCU',
-                backgroundColor: lightRed,
-                iconColor: primaryRed,
-              ),
+            _buildServiceIcon(
+              icon: Icons.monitor_heart_rounded,
+              label: 'MCU',
+              backgroundColor: lightRed,
+              iconColor: primaryRed,
+              onTap: () => onTabChange(1),
             ),
-
-            const SizedBox(width: 15),
-
-            InkWell(
+            _buildServiceIcon(
+              icon: Icons.eco_rounded,
+              label: 'Lingkungan',
+              backgroundColor: const Color(0xFFE8F5E9),
+              iconColor: const Color(0xFF2E7D32),
               onTap: () {
                 if (isKaryawan) {
                   onTabChange(2);
@@ -500,17 +603,8 @@ class LayananLainnya extends StatelessWidget {
                   _showAccessDeniedDialog(context);
                 }
               },
-              child: _buildServiceIcon(
-                icon: Icons.eco_sharp,
-                label: 'Lingkungan',
-                backgroundColor: const Color(0xFFE6F5E8),
-                iconColor: const Color(0xFF388E3C),
-              ),
             ),
-
-            const SizedBox(width: 15),
             _buildPlaceholderIcon(),
-            const SizedBox(width: 15),
             _buildPlaceholderIcon(),
           ],
         ),
@@ -523,21 +617,28 @@ class LayananLainnya extends StatelessWidget {
     required String label,
     required Color backgroundColor,
     required Color iconColor,
+    required VoidCallback onTap,
   }) {
-    return Column(
-      children: [
-        Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(10.0),
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 65,
+            height: 65,
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(color: backgroundColor.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))
+              ],
+            ),
+            child: Icon(icon, color: iconColor, size: 32),
           ),
-          child: Icon(icon, color: iconColor, size: 30),
-        ),
-        const SizedBox(height: 5),
-        Text(label, style: const TextStyle(fontSize: 12.0)),
-      ],
+          const SizedBox(height: 8),
+          Text(label, style: const TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: Colors.black87)),
+        ],
+      ),
     );
   }
 
@@ -545,21 +646,27 @@ class LayananLainnya extends StatelessWidget {
     return Column(
       children: [
         Container(
-          width: 60,
-          height: 60,
+          width: 65,
+          height: 65,
           decoration: BoxDecoration(
-            color: Colors.grey[200],
-            borderRadius: BorderRadius.circular(10.0),
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.grey.shade300, width: 1.5, style: BorderStyle.solid),
           ),
-          child: Icon(Icons.add, color: Colors.grey[600], size: 30),
+          child: Center(
+            child: Icon(Icons.more_horiz_rounded, color: Colors.grey.shade400, size: 28),
+          ),
         ),
-        const SizedBox(height: 5),
-        const Text('', style: TextStyle(fontSize: 12.0)),
+        const SizedBox(height: 8),
+        Text("Lainnya", style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w500, color: Colors.grey.shade500)),
       ],
     );
   }
 }
 
+// =========================================================
+// 4. KARTU JADWAL MEDICAL CHECK UP
+// =========================================================
 class JadwalMedicalCheckUp extends StatelessWidget {
   final List<McuData> mcuList;
 
@@ -568,8 +675,9 @@ class JadwalMedicalCheckUp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final activeSchedule = mcuList.firstWhere(
-            (m) => m.status == 'Scheduled',
-        orElse: () => McuData(id: 0, checkUpNumber: '#', noAntrean: '-', date: 'Tidak Ada', doctorName: 'N/A', status: 'N/A', category: 'N/A', resume: null, downloadUrl: null, qrCodeId: '-'));
+          (m) => m.status == 'Scheduled',
+      orElse: () => McuData(id: 0, checkUpNumber: '#', noAntrean: '-', date: 'Tidak Ada', doctorName: 'N/A', status: 'N/A', category: 'N/A', resume: null, downloadUrl: null, qrCodeId: '-'),
+    );
 
     final hasActiveSchedule = activeSchedule.id != 0;
 
@@ -581,13 +689,14 @@ class JadwalMedicalCheckUp extends StatelessWidget {
           children: [
             const Text(
               'Jadwal Medical Check Up',
-              style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.w800, color: Colors.black87),
             ),
             InkWell(
-              onTap: () {
-                // TODO: Navigasi ke halaman utama Jadwal MCU
-              },
-              child: const Icon(Icons.arrow_forward_ios, size: 16.0, color: primaryRed),
+              onTap: () {},
+              child: const Padding(
+                padding: EdgeInsets.all(4.0),
+                child: Icon(Icons.arrow_forward_ios_rounded, size: 16.0, color: primaryRed),
+              ),
             ),
           ],
         ),
@@ -602,37 +711,85 @@ class JadwalMedicalCheckUp extends StatelessWidget {
               );
             }
           },
+          borderRadius: BorderRadius.circular(20),
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(20.0),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(10.0),
-              border: Border.all(color: primaryRed.withOpacity(hasActiveSchedule ? 1.0 : 0.2), width: hasActiveSchedule ? 1.5 : 1.0),
-              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 5.0, offset: Offset(0, 2))],
+              borderRadius: BorderRadius.circular(20.0),
+              border: Border.all(color: hasActiveSchedule ? primaryRed.withOpacity(0.3) : Colors.transparent, width: 1.5),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 15.0, offset: const Offset(0, 5))
+              ],
             ),
-            child: Column(
+            child: hasActiveSchedule
+                ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Medical Check Up ${activeSchedule.checkUpNumber}',
-                  style: TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold, color: Colors.black87),
-                ),
-                const Divider(height: 15, color: Colors.transparent),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(Icons.calendar_today, size: 16, color: primaryRed),
-                    SizedBox(width: 8),
-                    Text(activeSchedule.date, style: TextStyle(fontSize: 14.0)),
+                    Expanded(
+                      child: Text(
+                        'Medical Check Up ${activeSchedule.checkUpNumber}',
+                        style: const TextStyle(fontSize: 16.0, fontWeight: FontWeight.w800, color: Colors.black87),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: const Text("Aktif", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                    )
                   ],
                 ),
-                SizedBox(height: 8),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12.0),
+                  child: Divider(height: 1, color: Color(0xFFEEEEEE)),
+                ),
                 Row(
                   children: [
-                    Text('Dokter: ', style: TextStyle(fontSize: 14.0, color: Colors.black54)),
-                    Text(activeSchedule.doctorName, style: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w600)),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: lightRed, borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.calendar_today_rounded, size: 16, color: primaryRed),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(activeSchedule.date, style: const TextStyle(fontSize: 15.0, fontWeight: FontWeight.w600, color: Colors.black87)),
                   ],
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
+                      child: Icon(Icons.medical_information_rounded, size: 16, color: Colors.blue.shade700),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Dokter Pemeriksa', style: TextStyle(fontSize: 11.0, color: Colors.grey, fontWeight: FontWeight.w600)),
+                        Text(activeSchedule.doctorName, style: const TextStyle(fontSize: 14.0, fontWeight: FontWeight.w700, color: Colors.black87)),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            )
+                : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.event_busy_rounded, size: 48, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                const Text('Belum ada jadwal MCU aktif', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.grey)),
+                const SizedBox(height: 4),
+                const Text('Silakan lakukan pendaftaran terlebih dahulu.', style: TextStyle(fontSize: 13, color: Colors.black38)),
               ],
             ),
           ),
