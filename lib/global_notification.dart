@@ -4,12 +4,11 @@ import 'package:pusher_channels_flutter/pusher_channels_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:stmc_health_app/views/notification/notification_page.dart';
 
-// KUNCI GLOBAL: Agar kita bisa memunculkan Pop-Up dari background/halaman manapun
+// KUNCI GLOBAL
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// ID JADWAL GLOBAL: Agar Pusher tahu jadwal MCU siapa yang harus didengarkan
+// ID JADWAL GLOBAL
 int? globalActiveJadwalId;
-// ✅ INI REMOTE CONTROL GLOBAL YANG BENAR
 final ValueNotifier<int> globalRefreshTrigger = ValueNotifier<int>(0);
 
 class GlobalNotificationService {
@@ -25,10 +24,9 @@ class GlobalNotificationService {
   bool _isInitialized = false;
 
   Future<void> initPusher() async {
-    if (_isInitialized) return; // Cegah aplikasi memanggil ini berkali-kali
+    if (_isInitialized) return;
 
     try {
-      // SENSOR HITUNGAN AUDIO (Maksimal 3 Kali)
       _audioPlayer.onPlayerComplete.listen((event) {
         if (_isAlarmActive && _playCount < 2) {
           _playCount++;
@@ -53,7 +51,6 @@ class GlobalNotificationService {
   }
 
   void _onPusherEvent(PusherEvent event) {
-    // TAMBAHKAN LOG UNTUK MELIHAT APAKAH SINYAL MASUK
     debugPrint("PUSHER EVENT DITERIMA: ${event.eventName}");
     debugPrint("DATA: ${event.data}");
 
@@ -62,37 +59,24 @@ class GlobalNotificationService {
         Map<String, dynamic> data = jsonDecode(event.data.toString());
 
         debugPrint("EVENT ID: ${data['jadwalId']} | GLOBAL ID: $globalActiveJadwalId");
-
-        // ✅ TAMBAHAN UTAMA: Siapa pun yang dipanggil, semua halaman
-        // harus ikut me-refresh datanya agar sisa antrean selalu akurat.
         globalRefreshTrigger.value++;
 
-        // Cek apakah ID dari Laravel cocok dengan ID global di HP ini
         if (globalActiveJadwalId != null && data['jadwalId'].toString() == globalActiveJadwalId.toString()) {
           _playCount = 0;
           _isAlarmActive = true;
           _audioPlayer.setReleaseMode(ReleaseMode.release);
           _audioPlayer.play(AssetSource('audio/ding-dong.wav'));
 
-          // =======================================================
-          // 🔥 PERBAIKAN: SIMPAN KE BRANKAS HALAMAN NOTIFIKASI
-          // =======================================================
+          // Format notifikasi baru
           final newNotif = {
             'title': 'Panggilan Pemeriksaan',
             'body': 'Giliran Anda! Silakan segera masuk ke ruangan ${data['namaPoli']}.',
-            'link': '', // Kosongkan jika tidak ada URL lampiran
+            'link': '',
             'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
           };
 
-          // Memasukkan notifikasi baru ke urutan paling atas
-          appNotificationsNotifier.value = [newNotif, ...appNotificationsNotifier.value];
-
-          // Nyalakan bintik merah saat dipanggil!
-          hasUnreadNotifNotifier.value = true;
-
-          // ✅ TAMBAHKAN BARIS INI UNTUK MENYIMPAN KE MEMORI HP
-          NotificationManager.saveUserNotifications();
-          // =======================================================
+          // 🔥 Panggil fungsi Anti-Duplikasi dari NotificationManager
+          NotificationManager.addNotification(newNotif);
 
           // MUNCULKAN POP-UP SECARA GLOBAL
           if (navigatorKey.currentContext != null) {
@@ -137,7 +121,6 @@ class GlobalNotificationService {
       }
     }
 
-    // JIKA TERIMA EVENT UPDATE STATUS POLI
     if (event.eventName == 'StatusPoliUpdatedEvent' || event.eventName == '.StatusPoliUpdatedEvent') {
       try {
         Map<String, dynamic> data = jsonDecode(event.data.toString());
@@ -145,7 +128,6 @@ class GlobalNotificationService {
 
         debugPrint("Sinyal Update Status Diterima untuk Jadwal ID: $updatedJadwalId");
         globalRefreshTrigger.value++;
-        debugPrint("🔄 Remote Refresh ditekan! Value sekarang: ${globalRefreshTrigger.value}");
       } catch (e) {
         debugPrint("Error parse StatusPoliUpdatedEvent: $e");
       }

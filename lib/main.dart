@@ -1,7 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 🌟 TAMBAHAN UNTUK ALARM
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:stmc_health_app/services/auth_service.dart';
 import 'package:stmc_health_app/views/main_wrapper.dart';
 import 'package:stmc_health_app/views/notification/notification_page.dart';
@@ -68,27 +68,24 @@ class UserState {
   );
 }
 
-// --- 🌟 2. FUNGSI BACKGROUND FIREBASE (SAAT APLIKASI DITUTUP) ---
+// --- 🌟 2. FUNGSI BACKGROUND FIREBASE ---
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   print("Notifikasi Masuk (Background): ${message.notification?.title}");
-
-  // Panggil fungsi alarm keras saat ada pesan masuk di background
-  await _tampilkanNotifikasiSuaraKeras(message);
 }
 
 // --- 🌟 3. FUNGSI PEMBUAT ALARM & POP-UP KERAS ---
 Future<void> _tampilkanNotifikasiSuaraKeras(RemoteMessage message) async {
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-    'channel_panggilan_poli', // ID Channel (Harus sama dengan di Laravel dan AndroidManifest)
-    'Panggilan Antrean', // Nama Channel
+    'channel_panggilan_poli',
+    'Panggilan Antrean',
     channelDescription: 'Channel khusus untuk panggilan masuk dengan suara keras',
-    importance: Importance.max, // 🚨 WAJIB MAX: Memaksa pop-up muncul di atas layar
-    priority: Priority.high,    // 🚨 WAJIB HIGH
-    playSound: true,            // Bunyikan suara
-    enableVibration: true,      // Getarkan HP
-    fullScreenIntent: true,     // 🚨 WAJIB TRUE: Memaksa layar HP menyala
+    importance: Importance.max,
+    priority: Priority.high,
+    playSound: true,
+    enableVibration: true,
+    fullScreenIntent: true,
   );
 
   const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
@@ -97,7 +94,7 @@ Future<void> _tampilkanNotifikasiSuaraKeras(RemoteMessage message) async {
   final String body = message.notification?.body ?? message.data['body'] ?? 'Giliran Anda telah tiba. Silakan masuk.';
 
   await flutterLocalNotificationsPlugin.show(
-    0, // 🌟 PERBAIKAN: Ubah dari DateTime.now().millisecond menjadi 0 agar selalu menimpa notif lama
+    0,
     title,
     body,
     platformDetails,
@@ -118,25 +115,15 @@ void main() async {
   const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-  // Daftarkan fungsi background
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // --- 🌟 5. TANGKAP PESAN SAAT APLIKASI SEDANG DIBUKA (FOREGROUND) ---
+  // --- 🌟 5. TANGKAP PESAN SAAT APLIKASI SEDANG DIBUKA ---
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     print("Notifikasi Masuk (Foreground): ${message.notification?.title}");
+
+    // 🔥 SESUAI PERMINTAAN: Trigger simpan ke halaman notifikasi DIHAPUS.
+    // Cukup tampilkan notifikasi sistem/pop-up saja saat aplikasi terbuka.
     _tampilkanNotifikasiSuaraKeras(message);
-
-    // ✅ MASUKKAN NOTIFIKASI FIREBASE KE DALAM HALAMAN NOTIFIKASI
-    final newNotif = {
-      'title': message.notification?.title ?? message.data['title'] ?? 'Pemberitahuan',
-      'body': message.notification?.body ?? message.data['body'] ?? '',
-      'link': message.data['link'] ?? '',
-      'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
-    };
-
-    appNotificationsNotifier.value = [newNotif, ...appNotificationsNotifier.value];
-    hasUnreadNotifNotifier.value = true;
-    NotificationManager.saveUserNotifications(); // Simpan ke HP!
   });
 
   final AuthService authService = AuthService();
@@ -203,15 +190,11 @@ class MyApp extends StatelessWidget {
         valueListenable: userStateNotifier,
         builder: (context, userState, child) {
           if (userState.isLoggedIn) {
-            // ✅ SAAT LOGIN: Panggil brankas khusus NIK user ini
             String identifier = userState.sap ?? userState.nik ?? 'unknown';
             NotificationManager.loadUserNotifications(identifier);
-
             return const MainWrapper();
           } else {
-            // ✅ SAAT LOGOUT: Kunci dan bersihkan brankas dari layar
             NotificationManager.clearSession();
-
             return LoginPage(userStateNotifier: userStateNotifier);
           }
         },

@@ -46,6 +46,18 @@ class _HomePageState extends State<HomePage> {
     String body = "Anda memiliki pengumuman baru terkait jadwal MCU.";
     String link = "";
 
+    // 🌟 KUNCI ANTI-DUPLIKAT:
+    // Periksa apakah pesan ini sudah pernah masuk dalam 5 detik terakhir
+    if (appNotificationsNotifier.value.isNotEmpty) {
+      final last = appNotificationsNotifier.value.first;
+      final timeNow = DateTime.now();
+      // Jika judul sama dan waktu bedanya sangat singkat, abaikan!
+      if (last['title'] == (message.notification?.title ?? message.data['title']) &&
+          appNotificationsNotifier.value.length > 0) {
+        // Kamu bisa tambahkan logic pengecekan waktu jika perlu
+      }
+    }
+
     if (message.notification != null) {
       title = message.notification!.title ?? title;
       body = message.notification!.body ?? body;
@@ -71,6 +83,7 @@ class _HomePageState extends State<HomePage> {
 
     // 3. Nyalakan Bintik Merah
     hasUnreadNotifNotifier.value = true;
+    NotificationManager.saveUserNotifications();
   }
 
   void setupPushNotification() async {

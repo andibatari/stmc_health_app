@@ -13,7 +13,7 @@ final ValueNotifier<bool> hasUnreadNotifNotifier = ValueNotifier(false);
 String? activeUserIdentifier;
 
 // =======================================================
-// MANAJER BRANKAS PRIBADI (BARU)
+// MANAJER BRANKAS PRIBADI
 // =======================================================
 class NotificationManager {
   // Buka brankas khusus untuk user yang baru login
@@ -35,6 +35,27 @@ class NotificationManager {
     if (activeUserIdentifier == null) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('notifs_$activeUserIdentifier', jsonEncode(appNotificationsNotifier.value));
+  }
+
+  // 🔥 FUNGSI BARU: FILTER ANTI-DUPLIKASI (PENCEGAH NOTIF DOUBLE)
+  static void addNotification(Map<String, dynamic> newNotif) {
+    if (activeUserIdentifier == null) return;
+
+    final currentList = appNotificationsNotifier.value;
+
+    // Filter Super Ketat: Cek apakah notifikasi yang baru masuk KEMBAR dengan notifikasi di urutan teratas
+    if (currentList.isNotEmpty) {
+      final topNotif = currentList.first;
+      if (topNotif['title'] == newNotif['title'] && topNotif['body'] == newNotif['body']) {
+        debugPrint("⚠️ Notifikasi kembar ditolak masuk ke halaman.");
+        return; // Dibuang, jangan disimpan
+      }
+    }
+
+    // Jika aman, masukkan ke list paling atas
+    appNotificationsNotifier.value = [newNotif, ...currentList];
+    hasUnreadNotifNotifier.value = true;
+    saveUserNotifications();
   }
 
   // Bersihkan layar saat Logout
@@ -80,7 +101,7 @@ class NotificationPage extends StatelessWidget {
             tooltip: "Bersihkan Notifikasi",
             onPressed: () {
               appNotificationsNotifier.value = [];
-              NotificationManager.saveUserNotifications(); // Simpan status kosong ke HP
+              NotificationManager.saveUserNotifications();
             },
           )
         ],

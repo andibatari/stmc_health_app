@@ -22,9 +22,13 @@ class MainWrapper extends StatefulWidget {
 class MainWrapperState extends State<MainWrapper> {
   int _selectedIndex = 0;
 
+  // 🌟 FUNGSI BARU: Mengingat tab mana saja yang sudah pernah dibuka
+  final Set<int> _initializedIndices = {0}; // Beranda (0) otomatis diizinkan
+
   void onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
+      _initializedIndices.add(index); // Catat bahwa tab ini sudah pernah diklik
     });
   }
 
@@ -38,7 +42,7 @@ class MainWrapperState extends State<MainWrapper> {
         // 1. Logika penentuan menu
         final bool showLingkunganTab = userState.role == 'KARYAWAN';
 
-        // Susun daftar halaman yang terlihat
+        // Susun daftar halaman yang tersedia
         List<Widget> visiblePages = [
           HomePage(onTabChange: onItemTapped),
           const McuPage(),
@@ -74,27 +78,38 @@ class MainWrapperState extends State<MainWrapper> {
             label: 'Profil'
         ));
 
-        // --- FIX LAYAR MERAH: PENGAMAN INDEKS ---
+        // --- PENGAMAN INDEKS ---
         int safeIndex = _selectedIndex;
         if (safeIndex >= visibleItems.length) {
           safeIndex = visibleItems.length - 1;
         }
         if (safeIndex < 0) safeIndex = 0;
 
+        // 🌟 FUNGSI BARU: LAZY LOAD
+        // Hanya render halaman jika indeksnya ada di dalam _initializedIndices
+        _initializedIndices.add(safeIndex);
+        List<Widget> lazyPages = [];
+        for (int i = 0; i < visiblePages.length; i++) {
+          if (_initializedIndices.contains(i)) {
+            lazyPages.add(visiblePages[i]);
+          } else {
+            // Jika tab belum pernah diklik, biarkan kosong agar tidak memanggil API
+            lazyPages.add(const SizedBox.shrink());
+          }
+        }
+
         return Scaffold(
-          // extendBody di-set true agar konten bisa 'menyelusup' di bawah navigasi yang melayang
           extendBody: true,
           body: IndexedStack(
             index: safeIndex,
-            children: visiblePages,
+            children: lazyPages, // Gunakan halaman yang sudah dilindungi
           ),
-          // Navigasi bawah dibungkus dengan Container agar bisa dimodifikasi ala 'Floating'
           bottomNavigationBar: SafeArea(
             child: Container(
-              margin: const EdgeInsets.only(left: 20, right: 20, bottom: 20), // Memberi jarak agar melayang
+              margin: const EdgeInsets.only(left: 20, right: 20, bottom: 20),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(30), // Ujung melengkung modern
+                borderRadius: BorderRadius.circular(30),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.1),
@@ -108,7 +123,7 @@ class MainWrapperState extends State<MainWrapper> {
                 child: BottomNavigationBar(
                   type: BottomNavigationBarType.fixed,
                   backgroundColor: Colors.white,
-                  elevation: 0, // Matikan elevasi bawaan karena sudah pakai shadow di Container
+                  elevation: 0,
                   selectedItemColor: primaryRed,
                   unselectedItemColor: Colors.grey.shade400,
                   selectedFontSize: 12,
@@ -116,11 +131,7 @@ class MainWrapperState extends State<MainWrapper> {
                   selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w800, height: 1.5),
                   unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, height: 1.5),
                   currentIndex: safeIndex,
-                  onTap: (index) {
-                    setState(() {
-                      _selectedIndex = index;
-                    });
-                  },
+                  onTap: onItemTapped, // Gunakan fungsi onItemTapped yang baru
                   items: visibleItems,
                 ),
               ),
@@ -142,13 +153,12 @@ class MainWrapperState extends State<MainWrapper> {
         padding: const EdgeInsets.only(bottom: 4),
         child: Icon(icon, size: 26),
       ),
-      // Tampilan saat item sedang dipilih (aktif)
       activeIcon: Container(
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
-          color: primaryRed.withOpacity(0.1), // Efek background transparan
-          borderRadius: BorderRadius.circular(20), // Pill shape
+          color: primaryRed.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Icon(activeIcon, size: 26, color: primaryRed),
       ),
