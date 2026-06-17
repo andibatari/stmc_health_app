@@ -3,46 +3,47 @@ import 'package:http/http.dart' as http;
 import '../constants.dart';
 
 class LingkunganService {
-  Future<List<dynamic>> fetchLingkungan(
+  Future<Map<String,dynamic>> fetchLingkungan(
       String token, {
         String? location,
         String? department,
         String? unitKerja,
-        String? month
+        String? startDate,
+        String? endDate,
+        int page = 1,
+        int perPage = 50
       }) async {
-        // 1. Buat Map untuk query parameters
-        final Map<String, String> queryParams = {};
 
-        if (location != null && location != 'Semua') {
-          queryParams['location'] = location;
-        }
-        if (department != null && department != 'Semua') {
-          queryParams['department'] = department;
-        }
-        if (unitKerja != null && unitKerja != 'Semua') {
-          queryParams['unit_kerja'] = unitKerja;
-        }
+    final Map<String, String> queryParams = {
+      'page': page.toString(),
+      'per_page': perPage.toString(),
+    };
 
-        // 2. Gunakan Uri.parse dan replace untuk menggabungkan query parameters dengan aman
-        // Pastikan KBaseUrl dan KLingkunganUrl digabung dengan benar
-        final baseUri = Uri.parse('$KBaseUrl$KLingkunganUrl');
-        final finalUri = baseUri.replace(queryParameters: queryParams);
+    if (location != null && location != 'Semua') queryParams['location'] = location;
+    if (department != null && department != 'Semua') queryParams['department'] = department;
+    if (unitKerja != null && unitKerja != 'Semua') queryParams['unit_kerja'] = unitKerja;
 
-        final response = await http.get(
-          finalUri,
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Accept': 'application/json',
-          },
-        );
+    // Menambahkan filter tanggal jika dipilih
+    if (startDate != null) queryParams['start_date'] = startDate;
+    if (endDate != null) queryParams['end_date'] = endDate;
 
-        if (response.statusCode == 200) {
-          final body = jsonDecode(response.body);
-          return body['data'];
-        } else {
-          throw Exception('Gagal memuat data lingkungan');
-        }
+    final finalUri = Uri.parse('$KBaseUrl$KLingkunganUrl').replace(queryParameters: queryParams);
 
+    final response = await http.get(
+      finalUri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      // 🔥 PERBAIKAN: Sekarang kita return seluruh body agar Flutter bisa baca 'meta' (untuk paginasi)
+      return body;
+    } else {
+      throw Exception('Gagal memuat data lingkungan: ${response.statusCode}');
+    }
   }
 
   Future<Map<String, dynamic>> fetchFilters(String token) async {

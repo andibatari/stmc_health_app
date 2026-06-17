@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_messaging/firebase_messaging.dart'; // 🌟 TAMBAHAN IMPORT
 import 'package:stmc_health_app/views/login/login_page.dart';
 import 'package:stmc_health_app/views/profile/tentang_aplikasi_page.dart';
+import 'package:stmc_health_app/views/notification/notification_page.dart'; // 🌟 TAMBAHAN IMPORT
 import '../../main.dart';
 import '../../services/auth_service.dart';
 import 'data_pribadi_page.dart';
@@ -80,13 +82,31 @@ class ProfilePage extends StatelessWidget {
   }
 
   void _logout(BuildContext context, UserState userState) async {
+    // 🌟 1. Tampilkan loading agar proses tidak terpotong
+    if (context.mounted) {
+      showDialog(context: context, barrierDismissible: false, builder: (ctx) => const Center(child: CircularProgressIndicator(color: primaryRed)));
+    }
+
+    try {
+      // 🌟 2. HAPUS TOKEN FIREBASE DARI HP
+      // Ini memastikan notifikasi user lama (M. Taufik) tidak masuk lagi setelah logout
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (e) {
+      debugPrint("Gagal hapus FCM token: $e");
+    }
+
     final AuthService authService = AuthService();
     final userStateNotifier = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier;
 
     await authService.logout();
+
+    // 🌟 3. BERSIHKAN BRANKAS NOTIFIKASI LOKAL
+    NotificationManager.clearSession();
+
     userStateNotifier.value = UserState.initial();
 
     if (context.mounted) {
+      Navigator.pop(context); // Tutup loading
       Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (context) => LoginPage(userStateNotifier: userStateNotifier)), (route) => false);
     }
   }
@@ -96,7 +116,7 @@ class ProfilePage extends StatelessWidget {
     final userStateNotifier = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier;
 
     return Scaffold(
-      backgroundColor: bgGrey, // Background dibuat lebih terang
+      backgroundColor: bgGrey,
       appBar: AppBar(
         title: const Text('Profil Saya', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 0.5)),
         backgroundColor: primaryRed,
@@ -117,7 +137,6 @@ class ProfilePage extends StatelessWidget {
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 children: [
-                  // Desain Header Profil Melengkung
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.only(top: 30.0, bottom: 40.0),
@@ -161,9 +180,7 @@ class ProfilePage extends StatelessWidget {
                                           fit: BoxFit.cover,
                                           width: 100,
                                           height: 100,
-                                          // ✅ PENYELAMAT JIKA FOTO TIDAK DITEMUKAN (ERROR 404)
                                           errorBuilder: (context, error, stackTrace) {
-                                            debugPrint("Foto gagal dimuat, menampilkan ikon default.");
                                             return const Icon(Icons.person_rounded, color: primaryRed, size: 55);
                                           }
                                       )
@@ -203,7 +220,6 @@ class ProfilePage extends StatelessWidget {
                     ),
                   ),
 
-                  // Menu Profil yang melayang (Overlap)
                   Transform.translate(
                     offset: const Offset(0, -20),
                     child: Padding(

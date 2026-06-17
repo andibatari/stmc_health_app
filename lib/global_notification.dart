@@ -67,16 +67,18 @@ class GlobalNotificationService {
           _audioPlayer.setReleaseMode(ReleaseMode.release);
           _audioPlayer.play(AssetSource('audio/ding-dong.wav'));
 
-          // Format notifikasi baru
+          // 🌟 PERBAIKAN: Format notifikasi baru disesuaikan dengan standar Brankas Anti-Duplikat
           final newNotif = {
+            'messageId': 'pusher_${DateTime.now().millisecondsSinceEpoch}', // ID unik buatan sendiri
             'title': 'Panggilan Pemeriksaan',
             'body': 'Giliran Anda! Silakan segera masuk ke ruangan ${data['namaPoli']}.',
-            'link': '',
+            'action_link': '',
+            'recipient_sap': activeUserIdentifier ?? 'ALL', // Ambil dari notification_page.dart
             'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
           };
 
-          // 🔥 Panggil fungsi Anti-Duplikasi dari NotificationManager
-          NotificationManager.addNotification(newNotif);
+          // 🌟 Panggil fungsi khusus untuk notifikasi lokal/Pusher
+          NotificationManager.saveLocalNotification(newNotif);
 
           // MUNCULKAN POP-UP SECARA GLOBAL
           if (navigatorKey.currentContext != null) {

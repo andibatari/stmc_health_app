@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // IMPORT FCM BARU
-import 'package:http/http.dart' as http; // IMPORT HTTP BARU
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:http/http.dart' as http;
 import 'package:stmc_health_app/main.dart';
 import 'package:stmc_health_app/services/mcu_service.dart';
 import '../../global_notification.dart';
@@ -8,18 +8,17 @@ import '../../services/auth_service.dart';
 import '../notification/notification_page.dart';
 import 'lingkungan_page.dart';
 import 'mcu_page.dart';
-import 'package:intl/intl.dart'; // Jika belum ada, untuk format tanggal
+import 'package:intl/intl.dart';
 
-// Definisi warna utama yang digunakan dalam desain
 const Color primaryRed = Color(0xFFC00000);
 const Color darkRed = Color(0xFF8B0000);
 const Color lightRed = Color(0xFFFBECEC);
-const Color bgGrey = Color(0xFFF8F9FA); // Background yang lebih lembut
+const Color bgGrey = Color(0xFFF8F9FA);
 
 typedef TabChangeCallback = void Function(int index);
 
 // =========================================================
-// 1. HOMEPAGE & FIREBASE LOGIC (FUNGSI TIDAK DIUBAH)
+// 1. HOMEPAGE & FIREBASE LOGIC (SUDAH DIBERSIHKAN)
 // =========================================================
 class HomePage extends StatefulWidget {
   final TabChangeCallback onTabChange;
@@ -39,52 +38,8 @@ class _HomePageState extends State<HomePage> {
     setupPushNotification();
   }
 
-  // Fungsi khusus untuk menyimpan notif ke brankas
-  void _simpanNotifKeBrankas(RemoteMessage message) {
-    // 1. Ekstrak data sekuat mungkin (Cek dari 'notification', jika gagal cek dari 'data')
-    String title = "Pengingat MCU";
-    String body = "Anda memiliki pengumuman baru terkait jadwal MCU.";
-    String link = "";
-
-    // 🌟 KUNCI ANTI-DUPLIKAT:
-    // Periksa apakah pesan ini sudah pernah masuk dalam 5 detik terakhir
-    if (appNotificationsNotifier.value.isNotEmpty) {
-      final last = appNotificationsNotifier.value.first;
-      final timeNow = DateTime.now();
-      // Jika judul sama dan waktu bedanya sangat singkat, abaikan!
-      if (last['title'] == (message.notification?.title ?? message.data['title']) &&
-          appNotificationsNotifier.value.length > 0) {
-        // Kamu bisa tambahkan logic pengecekan waktu jika perlu
-      }
-    }
-
-    if (message.notification != null) {
-      title = message.notification!.title ?? title;
-      body = message.notification!.body ?? body;
-    }
-
-    if (message.data.isNotEmpty) {
-      title = message.data['title'] ?? title;
-      body = message.data['body'] ?? message.data['message'] ?? body;
-      link = message.data['link'] ?? message.data['url'] ?? "";
-    }
-
-    final newNotif = {
-      'title': title,
-      'body': body,
-      'link': link,
-      'time': "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
-    };
-
-    // 2. Simpan ke brankas dengan List BARU agar UI pasti ter-trigger (merender ulang)
-    final currentList = List<Map<String, dynamic>>.from(appNotificationsNotifier.value);
-    currentList.insert(0, newNotif); // Masukkan di urutan paling atas
-    appNotificationsNotifier.value = currentList;
-
-    // 3. Nyalakan Bintik Merah
-    hasUnreadNotifNotifier.value = true;
-    NotificationManager.saveUserNotifications();
-  }
+  // 🛑 FUNGSI _simpanNotifKeBrankas TELAH DIHAPUS SEPENUHNYA!
+  // Urusan menyimpan notifikasi sekarang sudah di-handle 100% oleh main.dart
 
   void setupPushNotification() async {
     if (_isNotificationSetupRunning) return;
@@ -92,70 +47,21 @@ class _HomePageState extends State<HomePage> {
 
     try {
       FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+      // 1. Minta Izin ke Pengguna HP
       NotificationSettings settings = await messaging.requestPermission(
         alert: true, badge: true, sound: true,
       );
 
+      // 2. Jika Diizinkan, Ambil Token dan Kirim ke Server
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         String? token = await messaging.getToken();
         sendTokenToLaravel(token);
       }
 
-      // KONDISI 1: TANGKAP NOTIF SAAT APLIKASI TERBUKA DI LAYAR (Foreground)
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        _simpanNotifKeBrankas(message);
-
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text(message.notification?.title ?? "Pengumuman", style: const TextStyle(fontWeight: FontWeight.bold)),
-            content: Text(message.notification?.body ?? ""),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Tutup", style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryRed,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: () {
-                  // Matikan bintik merah saat dilihat
-                  hasUnreadNotifNotifier.value = false;
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
-                },
-                child: const Text("Lihat", style: TextStyle(color: Colors.white)),
-              )
-            ],
-          ),
-        );
-      });
-
-      // KONDISI 2: TANGKAP NOTIF SAAT APLIKASI DI-MINIMIZE (Background)
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        _simpanNotifKeBrankas(message);
-        hasUnreadNotifNotifier.value = false; // Matikan bintik merah
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
-      });
-
-      // KONDISI 3: TANGKAP NOTIF SAAT APLIKASI DITUTUP TOTAL (Terminated)
-      // Gunakan .then() agar tidak memblokir proses rendering HomePage
-      FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? initialMessage) {
-        if (initialMessage != null) {
-          _simpanNotifKeBrankas(initialMessage);
-          hasUnreadNotifNotifier.value = false; // Matikan bintik merah
-
-          // Beri delay 1 detik agar HomePage selesai di-render sebelum dipaksa pindah layar
-          Future.delayed(const Duration(milliseconds: 1000), () {
-            if (mounted) {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationPage()));
-            }
-          });
-        }
-      });
+      // 🛑 BLOK onMessage, onMessageOpenedApp, dan getInitialMessage DIHAPUS DARI SINI!
+      // Karena kita sudah menyetelnya secara global di dalam main.dart.
+      // Ini mencegah aplikasi bekerja 2x dan mencegah memori saling bertabrakan.
 
     } catch (e) {
       debugPrint("Error setup FCM: $e");
@@ -195,7 +101,7 @@ class _HomePageState extends State<HomePage> {
       valueListenable: userStateNotifier,
       builder: (context, userState, child) {
         return Scaffold(
-          backgroundColor: bgGrey, // Background lebih elegan
+          backgroundColor: bgGrey,
           body: RefreshIndicator(
             color: primaryRed,
             backgroundColor: Colors.white,
@@ -206,10 +112,8 @@ class _HomePageState extends State<HomePage> {
 
                 if (loginData != null) {
                   final userData = loginData['userData'];
-                  dynamic isEmployeeRaw = userData['is_employee'] ??
-                      userData['isEmployee'];
-                  bool isEmployee = (isEmployeeRaw == true ||
-                      isEmployeeRaw == 1 || isEmployeeRaw.toString() == 'true');
+                  dynamic isEmployeeRaw = userData['is_employee'] ?? userData['isEmployee'];
+                  bool isEmployee = (isEmployeeRaw == true || isEmployeeRaw == 1 || isEmployeeRaw.toString() == 'true');
                   String updatedRole = isEmployee ? 'KARYAWAN' : 'NON_PTST';
 
                   String? updatedName = userData['nama'];
@@ -248,16 +152,13 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  HomeHeader(
-                      userState: userState, onTabChange: widget.onTabChange),
+                  HomeHeader(userState: userState, onTabChange: widget.onTabChange),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20.0, vertical: 24.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        LayananLainnya(onTabChange: widget.onTabChange,
-                            userState: userState),
+                        LayananLainnya(onTabChange: widget.onTabChange, userState: userState),
                         const SizedBox(height: 30),
                         JadwalMedicalCheckUpAPI(),
                       ],
