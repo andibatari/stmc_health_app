@@ -26,6 +26,18 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   final AuthService _authService = AuthService();
 
+  // 🌟 PERBAIKAN: Fungsi untuk mengambil token dengan *retry* (jika pertama kali null)
+  Future<String?> _getFcmTokenWithRetry() async {
+    String? token = await FirebaseMessaging.instance.getToken();
+
+    // Jika masih null, tunggu 2 detik (mungkin Firebase sedang inisialisasi)
+    if (token == null) {
+      await Future.delayed(const Duration(seconds: 2));
+      token = await FirebaseMessaging.instance.getToken();
+    }
+    return token;
+  }
+
   // 🌟 FUNGSI BARU: MENANGANI TOMBOL LUPA PASSWORD DENGAN INTERAKSI PREMIUM
   void _showForgotPasswordBottomSheet(BuildContext context) {
     showModalBottomSheet(
@@ -112,18 +124,12 @@ class _LoginPageState extends State<LoginPage> {
     final String identifier = _identifierController.text;
     final String password = _passwordController.text;
 
-    // 🌟 FUNGSI BARU: MENGAMBIL FCM TOKEN SEBELUM LOGIN
-    String? fcmToken;
-    try {
-      fcmToken = await FirebaseMessaging.instance.getToken();
-      debugPrint("FCM Token HP ini: $fcmToken"); // Cek di terminal apakah token berhasil didapat
-    } catch (e) {
-      debugPrint("Gagal mengambil FCM token: $e");
-    }
+    // 🌟 Gunakan fungsi retry
+    String? fcmToken = await _getFcmTokenWithRetry();
+    debugPrint("FCM Token yang akan dikirim: $fcmToken");
 
-    // 🌟 PERBAIKAN: Kirim identifier, password, dan fcmToken ke server
+    // Kirim ke server
     final result = await _authService.login(identifier, password, fcmToken: fcmToken);
-
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {

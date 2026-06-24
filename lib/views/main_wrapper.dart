@@ -56,8 +56,8 @@ class MainWrapperState extends State<MainWrapper> {
               label: 'Beranda'
           ),
           _buildNavItem(
-              icon: Icons.monitor_heart_rounded,
-              activeIcon: Icons.favorite_rounded,
+              icon: Icons.monitor_heart_outlined,
+              activeIcon: Icons.monitor_heart_rounded,
               label: 'MCU'
           ),
         ];

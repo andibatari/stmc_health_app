@@ -18,7 +18,7 @@ const Color bgGrey = Color(0xFFF8F9FA);
 typedef TabChangeCallback = void Function(int index);
 
 // =========================================================
-// 1. HOMEPAGE & FIREBASE LOGIC (SUDAH DIBERSIHKAN)
+// 1. HOMEPAGE & FIREBASE LOGIC
 // =========================================================
 class HomePage extends StatefulWidget {
   final TabChangeCallback onTabChange;
@@ -38,9 +38,6 @@ class _HomePageState extends State<HomePage> {
     setupPushNotification();
   }
 
-  // 🛑 FUNGSI _simpanNotifKeBrankas TELAH DIHAPUS SEPENUHNYA!
-  // Urusan menyimpan notifikasi sekarang sudah di-handle 100% oleh main.dart
-
   void setupPushNotification() async {
     if (_isNotificationSetupRunning) return;
     _isNotificationSetupRunning = true;
@@ -59,10 +56,6 @@ class _HomePageState extends State<HomePage> {
         sendTokenToLaravel(token);
       }
 
-      // 🛑 BLOK onMessage, onMessageOpenedApp, dan getInitialMessage DIHAPUS DARI SINI!
-      // Karena kita sudah menyetelnya secara global di dalam main.dart.
-      // Ini mencegah aplikasi bekerja 2x dan mencegah memori saling bertabrakan.
-
     } catch (e) {
       debugPrint("Error setup FCM: $e");
     } finally {
@@ -74,16 +67,20 @@ class _HomePageState extends State<HomePage> {
     if (token == null) return;
 
     final myApp = context.findAncestorWidgetOfExactType<MyApp>();
-    final userId = myApp?.userStateNotifier.value.userData?['id'];
+    final accessToken = myApp?.userStateNotifier.value.accessToken;
 
-    if (userId != null) {
+    if (accessToken != null) {
       final url = Uri.parse("https://stmc-health.my.id/api/update-fcm-token");
       try {
-        await http.post(url, body: {
-          'karyawan_id': userId.toString(),
-          'fcm_token': token,
-        });
-        debugPrint("FCM Token berhasil dikirim ke server!");
+        await http.post(
+          url,
+          headers: {
+            "Authorization": "Bearer $accessToken",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: {'fcm_token': token},
+        );
+        debugPrint("✅ FCM Token berhasil di-update dengan autentikasi!");
       } catch (e) {
         debugPrint("Gagal kirim FCM Token: $e");
       }
@@ -229,10 +226,7 @@ class HomeHeader extends StatelessWidget {
                       children: [
                         InkWell(
                           onTap: () {
-                            // ✅ 1. MATIKAN BINTIK MERAH DULU
                             hasUnreadNotifNotifier.value = false;
-
-                            // ✅ 2. BERI JEDA SEDIKIT AGAR UI SEMPAT UPDATE SEBELUM PINDAH HALAMAN
                             Future.delayed(const Duration(milliseconds: 100), () {
                               if (context.mounted) {
                                 Navigator.push(
@@ -253,7 +247,6 @@ class HomeHeader extends StatelessWidget {
                           ),
                         ),
 
-                        // ✅ TAMPILKAN BINTIK MERAH HANYA JIKA ADA YANG BELUM DIBACA
                         if (hasUnread)
                           Positioned(
                             right: 2,
@@ -448,7 +441,7 @@ class HomeHeader extends StatelessWidget {
 }
 
 // =========================================================
-// 3. LAYANAN LAINNYA WIDGET
+// 3. MENU LAYANAN WIDGET (TAMPILAN DIPERBAIKI)
 // =========================================================
 class LayananLainnya extends StatelessWidget {
   final TabChangeCallback onTabChange;
@@ -491,12 +484,12 @@ class LayananLainnya extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Layanan Lainnya',
+          'Menu Layanan', // 🌟 Teks "Layanan Lainnya" diubah menjadi "Menu Layanan"
           style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.w800, color: Colors.black87),
         ),
         const SizedBox(height: 18),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisAlignment: MainAxisAlignment.start, // 🌟 Diubah dari spaceBetween ke start agar rapat
           children: <Widget>[
             _buildServiceIcon(
               icon: Icons.monitor_heart_rounded,
@@ -505,6 +498,7 @@ class LayananLainnya extends StatelessWidget {
               iconColor: primaryRed,
               onTap: () => onTabChange(1),
             ),
+            const SizedBox(width: 32), // 🌟 Diberi jarak statis yang ideal
             _buildServiceIcon(
               icon: Icons.eco_rounded,
               label: 'Lingkungan',
@@ -518,8 +512,6 @@ class LayananLainnya extends StatelessWidget {
                 }
               },
             ),
-            _buildPlaceholderIcon(),
-            _buildPlaceholderIcon(),
           ],
         ),
       ],
@@ -553,27 +545,6 @@ class LayananLainnya extends StatelessWidget {
           Text(label, style: const TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: Colors.black87)),
         ],
       ),
-    );
-  }
-
-  Widget _buildPlaceholderIcon() {
-    return Column(
-      children: [
-        Container(
-          width: 65,
-          height: 65,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade200,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.grey.shade300, width: 1.5, style: BorderStyle.solid),
-          ),
-          child: Center(
-            child: Icon(Icons.more_horiz_rounded, color: Colors.grey.shade400, size: 28),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text("Lainnya", style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w500, color: Colors.grey.shade500)),
-      ],
     );
   }
 }

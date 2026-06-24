@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:pusher_channels_flutter/pusher_channels_flutter.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 // Asumsi path file main.dart berada dua level di atas.
@@ -240,7 +238,10 @@ class _McuDetailPageState extends State<McuDetailPage> {
 
   // FUNGSI RAHASIA JALAN SULTAN: Ambil data segar langsung dari database via API
   Future<void> _refreshMcuDataFromServer() async {
-    final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
+    final myApp = context.findAncestorWidgetOfExactType<MyApp>();
+    if (myApp == null) return;
+
+    final userState = myApp.userStateNotifier.value;
     final mcuService = McuService();
 
     final result = await mcuService.fetchRiwayatJadwal(accessToken: userState.accessToken!);
@@ -255,7 +256,7 @@ class _McuDetailPageState extends State<McuDetailPage> {
       if (myFreshData != null && mounted) {
         setState(() {
           // Ganti data lama dengan data baru yang segar dari server
-          currentMcu = _mcuDataFromApi(myFreshData);
+          currentMcu = _mcuDataFromApi(myFreshData as Map<String, dynamic>);
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Status Poli Anda Baru Saja Diperbarui! ✅', style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating),
@@ -567,66 +568,72 @@ class _McuDetailPageState extends State<McuDetailPage> {
     String statusText = (statusPoli == 'Calling') ? "GILIRAN ANDA! Silakan Masuk" : "Menunggu Panggilan...";
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
+      margin: const EdgeInsets.only(bottom: 16), // 🌟 Diperkecil dari 24 ke 16
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
+        borderRadius: BorderRadius.circular(20), // 🌟 Diperkecil dari 24 ke 20
+        border: Border.all(color: Colors.grey.shade200), // 🌟 Tambah border tipis
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 4))], // 🌟 Bayangan lebih halus
       ),
       child: Column(
         children: [
           // Header Tiket
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            padding: const EdgeInsets.symmetric(vertical: 10), // 🌟 Diperkecil dari 14 ke 10
             width: double.infinity,
-            decoration: const BoxDecoration(color: primaryRed, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            decoration: const BoxDecoration(
+                color: primaryRed,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)) // 🌟 Menyesuaikan radius
+            ),
             child: const Center(
-              child: Text("TIKET ANTREAN VIRTUAL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 2.0, fontSize: 12)),
+              child: Text("TIKET ANTREAN VIRTUAL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 11)), // 🌟 Font & letter spacing diperkecil
             ),
           ),
           // Body Tiket
           Padding(
-            padding: const EdgeInsets.all(28),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), // 🌟 Padding dalam diperkecil secara signifikan
             child: Column(
               children: [
-                Text("RUANGAN POLI", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey.shade400, letterSpacing: 1.5)),
-                const SizedBox(height: 4),
-                Text(namaPoli.toUpperCase(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87), textAlign: TextAlign.center),
-                const SizedBox(height: 30),
+                Text("RUANGAN POLI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey.shade400, letterSpacing: 1.0)),
+                const SizedBox(height: 2),
+                Text(namaPoli.toUpperCase(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.black87), textAlign: TextAlign.center), // 🌟 Font size dari 22 ke 18
+                const SizedBox(height: 16), // 🌟 Dari 30 ke 16
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     Column(
                       children: [
-                        const Text("ANTREAN ANDA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.0)),
-                        const SizedBox(height: 4),
-                        Text(displayAntrean, style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: primaryRed, height: 1.1)),
+                        const Text("ANTREAN ANDA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey)),
+                        const SizedBox(height: 2),
+                        Text(displayAntrean, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: primaryRed, height: 1.1)), // 🌟 Ukuran angka dari 48 ke 36
                       ],
                     ),
-                    Container(height: 60, width: 2, color: Colors.grey.shade200),
+                    Container(height: 45, width: 1.5, color: Colors.grey.shade200), // 🌟 Tinggi garis pemisah dikurangi
                     Column(
                       children: [
-                        const Text("SISA DEPAN", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.0)),
-                        const SizedBox(height: 4),
-                        Text(displaySisa, style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: Colors.orange.shade600, height: 1.1)),
+                        const Text("SISA DEPAN", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey)),
+                        const SizedBox(height: 2),
+                        Text(displaySisa, style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Colors.orange.shade600, height: 1.1)), // 🌟 Ukuran angka dari 48 ke 36
                       ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 16), // 🌟 Dari 30 ke 16
 
                 // Status Bottom
                 Container(
-                  width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: statusBgColor, borderRadius: BorderRadius.circular(16)),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10), // 🌟 Dari 14 ke 10
+                  decoration: BoxDecoration(color: statusBgColor, borderRadius: BorderRadius.circular(12)), // 🌟 Radius disesuaikan
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(statusIcon, size: 20, color: statusColor),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(statusText, style: TextStyle(fontWeight: FontWeight.w900, color: statusColor, fontSize: 13), textAlign: TextAlign.center),
+                      Icon(statusIcon, size: 18, color: statusColor), // 🌟 Icon dari 20 ke 18
+                      const SizedBox(width: 6),
+                      Flexible( // 🌟 Menggunakan Flexible agar aman pada layar kecil
+                        child: Text(statusText, style: TextStyle(fontWeight: FontWeight.w800, color: statusColor, fontSize: 12), textAlign: TextAlign.center), // 🌟 Font size dikurangi 1pt
                       )
                     ],
                   ),
@@ -669,7 +676,10 @@ class _McuDetailPageState extends State<McuDetailPage> {
 
     setState(() => _isCheckingIn = true);
 
-    final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
+    final myApp = context.findAncestorWidgetOfExactType<MyApp>();
+    if (myApp == null) return;
+    final userState = myApp.userStateNotifier.value;
+
     final mcuService = McuService();
 
     // Panggil API untuk "Check-In" ke Poli
@@ -1264,7 +1274,10 @@ class JadwalSelesaiList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
+    final myApp = context.findAncestorWidgetOfExactType<MyApp>();
+    if (myApp == null) return const Center();
+    final userState = myApp.userStateNotifier.value;
+
     final McuService mcuService = McuService();
 
     if (!userState.isLoggedIn) return const Center();
@@ -1275,7 +1288,8 @@ class JadwalSelesaiList extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryRed));
           if (snapshot.hasError || snapshot.data == null) return const Center();
 
-          final list = (snapshot.data!['selesai'] ?? []).map<McuData>((d) => _mcuDataFromApi(d)).toList();
+          // 🌟 PERBAIKAN: Menambahkan Type-Casting (as Map<String, dynamic>)
+          final list = (snapshot.data!['selesai'] ?? []).map<McuData>((d) => _mcuDataFromApi(d as Map<String, dynamic>)).toList();
 
           if (list.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.history_rounded, size: 60, color: Colors.grey.shade300), const SizedBox(height: 16), const Text("Tidak ada riwayat.", style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey, fontSize: 16))]));
 
@@ -1295,7 +1309,10 @@ class JadwalMedicalCheckUpAPI extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final userState = (context.findAncestorWidgetOfExactType<MyApp>() as MyApp).userStateNotifier.value;
+    final myApp = context.findAncestorWidgetOfExactType<MyApp>();
+    if (myApp == null) return const SizedBox.shrink();
+    final userState = myApp.userStateNotifier.value;
+
     final McuService mcuService = McuService();
 
     if (!userState.isLoggedIn || userState.accessToken == null) return const SizedBox.shrink();
@@ -1314,10 +1331,12 @@ class JadwalMedicalCheckUpAPI extends StatelessWidget {
             final List activeJadwalsApi = snapshot.data!['aktif'] ?? [];
             if (activeJadwalsApi.isEmpty) return const SizedBox.shrink();
 
-            final activeMcu = _mcuDataFromApi(activeJadwalsApi.first);
+            // 🌟 PERBAIKAN: Menambahkan Type-Casting (as Map<String, dynamic>)
+            final activeMcu = _mcuDataFromApi(activeJadwalsApi.first as Map<String, dynamic>);
             globalActiveJadwalId = activeMcu.id;
 
-            return JadwalMedicalCheckUp(activeMcu: activeMcu);
+            // 🌟 PERBAIKAN: Class telah diganti namanya agar tidak bentrok
+            return McuActiveCard(activeMcu: activeMcu);
           },
         );
       },
@@ -1325,10 +1344,12 @@ class JadwalMedicalCheckUpAPI extends StatelessWidget {
   }
 }
 
-class JadwalMedicalCheckUp extends StatelessWidget {
+// 🌟 PERBAIKAN KELAS INI TELAH DIUBAH NAMANYA MENJADI McuActiveCard
+// AGAR TIDAK BENTROK DENGAN JadwalMedicalCheckUp DI home_page.dart
+class McuActiveCard extends StatelessWidget {
   final McuData activeMcu;
 
-  const JadwalMedicalCheckUp({super.key, required this.activeMcu});
+  const McuActiveCard({super.key, required this.activeMcu});
 
   @override
   Widget build(BuildContext context) {

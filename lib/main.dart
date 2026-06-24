@@ -68,83 +68,147 @@ class UserState {
   );
 }
 
-// --- 🌟 1. BACKGROUND HANDLER (SAAT HP DI-LOCK/APLIKASI TERTUTUP) ---
+// --- 🌟 1. BACKGROUND HANDLER (SAAT APLIKASI TERTUTUP/MATI) ---
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   debugPrint("Notifikasi Masuk (Background): ${message.messageId}");
 
-  // Serahkan semua urusan ke fungsi sakti!
+  final FlutterLocalNotificationsPlugin backgroundLocalNotif = FlutterLocalNotificationsPlugin();
+  const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  await backgroundLocalNotif.initialize(const InitializationSettings(android: androidSettings));
+
   await NotificationManager.saveIncomingMessage(message);
+
+  if (message.data['tipe'] == 'panggilan_poli') {
+    const String channelId = 'channel_panggilan_poli_v6';
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      channelId,
+      'Panggilan Antrean Poli',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('ding_dong'),
+      enableVibration: true,
+      fullScreenIntent: true, // Paksa notif menggantung
+    );
+
+    final String title = message.data['title'] ?? 'PANGGILAN PEMERIKSAAN';
+    final String body = message.data['body'] ?? 'Giliran Anda! Silakan masuk ke ruangan.';
+
+    await backgroundLocalNotif.show(
+      message.hashCode, title, body,
+      const NotificationDetails(android: androidDetails),
+    );
+  }
 }
 
-// --- FUNGSI POP-UP FOREGROUND (MENGGANTUNG DARI ATAS) ---
-Future<void> _tampilkanNotifikasiSuaraKeras(RemoteMessage message) async {
+// --- FUNGSI MUNCULKAN ALARM CUSTOM SOUND FOREGROUND ---
+Future<void> _tampilkanAlarmPanggilanForeground(RemoteMessage message) async {
+  const String channelId = 'channel_panggilan_poli_v6';
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-    'channel_panggilan_poli',
-    'Panggilan Antrean',
-    importance: Importance.max,
-    priority: Priority.high,
-    playSound: true,
-    enableVibration: true,
+    channelId, 'Panggilan Antrean Poli',
+    importance: Importance.max, priority: Priority.high, playSound: true,
+    sound: RawResourceAndroidNotificationSound('ding_dong'),
+    enableVibration: true, fullScreenIntent: true,
   );
 
-  const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+  final String title = message.notification?.title ?? message.data['title'] ?? 'PANGGILAN PEMERIKSAAN';
+  final String body = message.notification?.body ?? message.data['body'] ?? 'Giliran Anda! Silakan masuk ke ruangan.';
 
   await flutterLocalNotificationsPlugin.show(
-    message.hashCode,
-    message.notification?.title ?? message.data['title'] ?? 'Notifikasi',
-    message.notification?.body ?? message.data['body'] ?? '',
-    platformDetails,
+    message.hashCode, title, body,
+    const NotificationDetails(android: androidDetails),
+  );
+}
+
+// --- FUNGSI MUNCULKAN SPANDUK PENGUMUMAN FOREGROUND (SUARA DEFAULT) ---
+Future<void> _tampilkanNotifikasiPengumumanForeground(RemoteMessage message) async {
+  const String channelId = 'channel_pengumuman_v1';
+  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    channelId, 'Pengumuman Umum',
+    importance: Importance.high, priority: Priority.high, playSound: true,
+    // Tidak menyebutkan 'sound', jadi akan otomatis pakai suara default HP
+  );
+
+  final String title = message.notification?.title ?? message.data['title'] ?? 'Notifikasi STMC';
+  final String body = message.notification?.body ?? message.data['body'] ?? '';
+
+  await flutterLocalNotificationsPlugin.show(
+    message.hashCode, title, body,
+    const NotificationDetails(android: androidDetails),
   );
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await GlobalNotificationService().initPusher();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
   const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
+  // 🌟 1. CHANNEL ALARM PANGGILAN POLI (Suara Ding-Dong)
+  const AndroidNotificationChannel channelAlarm = AndroidNotificationChannel(
+    'channel_panggilan_poli_v6',
+    'Panggilan Antrean Poli',
+    description: 'Alarm notifikasi untuk panggilan antrean pasien',
+    importance: Importance.max,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('ding_dong'),
+    enableVibration: true,
+  );
+
+  // 🌟 2. CHANNEL PENGUMUMAN & PENGINGAT (Suara Default HP)
+  const AndroidNotificationChannel channelPengumuman = AndroidNotificationChannel(
+    'channel_pengumuman_v1',
+    'Pengumuman Umum',
+    description: 'Notifikasi untuk pengingat jadwal dan informasi',
+    importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  // Daftarkan KEDUA channel tersebut ke OS Android
+  final platformPlugin = flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+  await platformPlugin?.createNotificationChannel(channelAlarm);
+  await platformPlugin?.createNotificationChannel(channelPengumuman);
+
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // --- 🌟 2. FOREGROUND HANDLER (SAAT APLIKASI DIBUKA) ---
+  // --- FOREGROUND HANDLER (SAAT APLIKASI SEDANG DIBUKA) ---
   FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-    debugPrint("Notifikasi Masuk (Foreground): ${message.messageId}");
-    await NotificationManager.saveIncomingMessage(message);
-    _tampilkanNotifikasiSuaraKeras(message);
-  });
-
-  // --- 🌟 3. ON MESSAGE OPENED APP (SAAT NOTIF DIKLIK DARI BACKGROUND) ---
-  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
-    debugPrint("Notifikasi Diklik (Background->Foreground): ${message.messageId}");
-
-    // Panggil fungsi simpan untuk menambal Link (jika sebelumnya hilang karena OS)
+    debugPrint("🔥 Notifikasi Masuk (Foreground): ${message.messageId}");
     await NotificationManager.saveIncomingMessage(message);
 
-    String? link = message.data['action_link'];
-    if (link != null && link.toString().startsWith('route:')) {
-      String routeName = link.toString().replaceFirst('route:', '');
-      navigatorKey.currentState?.pushNamed(routeName);
+    if (message.data['tipe'] == 'panggilan_poli') {
+      // 1. Munculkan Notifikasi Pop up (Heads Up) dengan suara ding-dong
+      await _tampilkanAlarmPanggilanForeground(message);
+      // 2. Munculkan Alert Dialog & Mainkan Audio interaktif
+      GlobalNotificationService().pemicuAlarmInteraktifForeground(message);
+    } else {
+      // 🌟 PERBAIKAN: Jika aplikasi sedang dibuka, munculkan spanduk pengumuman secara manual
+      await _tampilkanNotifikasiPengumumanForeground(message);
     }
   });
 
-  // --- 🌟 4. GET INITIAL MESSAGE (SAAT NOTIF DIKLIK DARI TERMINATED) ---
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+    await NotificationManager.saveIncomingMessage(message);
+    String? link = message.data['action_link'];
+    if (link != null && link.startsWith('route:')) {
+      navigatorKey.currentState?.pushNamed(link.replaceFirst('route:', ''));
+    }
+  });
+
   FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
     if (message != null) {
-      debugPrint("Notifikasi Diklik (Terminated->Foreground): ${message.messageId}");
-
       Future.delayed(const Duration(milliseconds: 1000), () async {
-        // Panggil fungsi simpan untuk memastikan Link tidak hilang
         await NotificationManager.saveIncomingMessage(message);
-
         String? link = message.data['action_link'];
-        if (link != null && link.toString().startsWith('route:')) {
-          String routeName = link.toString().replaceFirst('route:', '');
-          navigatorKey.currentState?.pushNamed(routeName);
+        if (link != null && link.startsWith('route:')) {
+          navigatorKey.currentState?.pushNamed(link.replaceFirst('route:', ''));
         }
       });
     }
@@ -152,8 +216,8 @@ void main() async {
 
   final AuthService authService = AuthService();
   UserState initialUserState = UserState.initial();
-
   final prefs = await SharedPreferences.getInstance();
+
   final token = prefs.getString('accessToken');
   final userDataJson = prefs.getString('userData');
 
@@ -171,13 +235,9 @@ void main() async {
         role: userRole, email: userData['email'], jobTitle: userData['jabatan'],
         nik: userData['nik'], no_hp: userData['no_hp'],
         tinggi_badan: userData['tinggi_badan']?.toString(), berat_badan: userData['berat_badan']?.toString(),
-        refreshToken: null, alamat: userData['alamat'], provinsi: userData['provinsi'],
-        kabupaten: userData['kabupaten'], kecamatan: userData['kecamatan'],
       );
-
       String initialIdentifier = initialUserState.sap ?? initialUserState.nik ?? 'unknown';
       await NotificationManager.loadUserNotifications(initialIdentifier);
-
     } catch (e) {
       await authService.clearLoginData();
     }
