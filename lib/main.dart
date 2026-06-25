@@ -80,6 +80,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   await NotificationManager.saveIncomingMessage(message);
 
+  // 1. LOGIKA UNTUK ALARM PANGGILAN POLI
   if (message.data['tipe'] == 'panggilan_poli') {
     const String channelId = 'channel_panggilan_poli_v6';
 
@@ -91,7 +92,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       playSound: true,
       sound: RawResourceAndroidNotificationSound('ding_dong'),
       enableVibration: true,
-      fullScreenIntent: true, // Paksa notif menggantung
+      fullScreenIntent: true,
     );
 
     final String title = message.data['title'] ?? 'PANGGILAN PEMERIKSAAN';
@@ -101,6 +102,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       message.hashCode, title, body,
       const NotificationDetails(android: androidDetails),
     );
+
+    // 🌟 2. TAMBAHKAN LOGIKA INI AGAR PENGINGAT MCU / UMUM MUNCUL SAAT BACKGROUND
   }
 }
 
@@ -181,6 +184,16 @@ void main() async {
   // --- FOREGROUND HANDLER (SAAT APLIKASI SEDANG DIBUKA) ---
   FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
     debugPrint("🔥 Notifikasi Masuk (Foreground): ${message.messageId}");
+
+    // 🌟 LOGIKA MENERIMA SINYAL SILUMAN
+    if (message.data['tipe'] == 'silent_update') {
+      debugPrint("🔄 Sinyal Silent Update Diterima! Merefresh layar...");
+      // Ini akan memicu _refreshMcuDataFromServer secara otomatis!
+      globalRefreshTrigger.value++;
+      return; // Berhenti di sini, JANGAN simpan ke kotak masuk pesan!
+    }
+
+    // Jika bukan siluman, simpan pesan ke brankas
     await NotificationManager.saveIncomingMessage(message);
 
     if (message.data['tipe'] == 'panggilan_poli') {
@@ -189,7 +202,7 @@ void main() async {
       // 2. Munculkan Alert Dialog & Mainkan Audio interaktif
       GlobalNotificationService().pemicuAlarmInteraktifForeground(message);
     } else {
-      // 🌟 PERBAIKAN: Jika aplikasi sedang dibuka, munculkan spanduk pengumuman secara manual
+      // Jika aplikasi sedang dibuka, munculkan spanduk pengumuman secara manual
       await _tampilkanNotifikasiPengumumanForeground(message);
     }
   });
